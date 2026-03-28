@@ -215,7 +215,7 @@ sudo reboot
 Verify hostapd and dnsmasq are running:
 
 ```bash
-ssh pi@192.168.4.1
+ssh photo@192.168.4.1
 systemctl status hostapd
 systemctl status dnsmasq
 ```
