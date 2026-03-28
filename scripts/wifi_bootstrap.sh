@@ -2,7 +2,10 @@
 set -euo pipefail
 
 WAIT_SECONDS=60
-FORCE_FLAG="/boot/force-onboarding"
+
+# Bookworm moved boot to /boot/firmware/; check both for compatibility
+FORCE_FLAG="/boot/firmware/force-onboarding"
+[[ -f "${FORCE_FLAG}" ]] || FORCE_FLAG="/boot/force-onboarding"
 
 is_wifi_connected() {
   local ssid
