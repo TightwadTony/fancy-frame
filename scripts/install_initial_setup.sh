@@ -10,6 +10,45 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 INSTALL_ROOT="/opt/photo-frame"
 
+detect_target_user() {
+  if [[ -n "${PHOTO_FRAME_USER:-}" ]] && id -u "${PHOTO_FRAME_USER}" >/dev/null 2>&1; then
+    printf '%s' "${PHOTO_FRAME_USER}"
+    return 0
+  fi
+
+  if [[ -n "${SUDO_USER:-}" ]] && [[ "${SUDO_USER}" != "root" ]] && id -u "${SUDO_USER}" >/dev/null 2>&1; then
+    printf '%s' "${SUDO_USER}"
+    return 0
+  fi
+
+  if id -u photo >/dev/null 2>&1; then
+    printf '%s' "photo"
+    return 0
+  fi
+
+  if id -u pi >/dev/null 2>&1; then
+    printf '%s' "pi"
+    return 0
+  fi
+
+  awk -F: '$3 >= 1000 && $1 != "nobody" {print $1; exit}' /etc/passwd
+}
+
+TARGET_USER="$(detect_target_user)"
+if [[ -z "${TARGET_USER}" ]] || ! id -u "${TARGET_USER}" >/dev/null 2>&1; then
+  echo "Could not determine a non-root user to own photo-frame files."
+  echo "Set one explicitly, for example:"
+  echo "  sudo PHOTO_FRAME_USER=photo bash scripts/install_initial_setup.sh"
+  exit 1
+fi
+
+TARGET_HOME="$(getent passwd "${TARGET_USER}" | cut -d: -f6)"
+if [[ -z "${TARGET_HOME}" ]]; then
+  TARGET_HOME="/home/${TARGET_USER}"
+fi
+
+echo "Using target user: ${TARGET_USER}"
+
 echo "Installing packages..."
 apt update
 apt install -y \
@@ -26,9 +65,9 @@ apt install -y \
 
 echo "Preparing directories..."
 mkdir -p /srv/photos
-chown -R pi:pi /srv/photos
+chown -R "${TARGET_USER}:${TARGET_USER}" /srv/photos
 mkdir -p /var/lib/photo-frame
-chown -R pi:pi /var/lib/photo-frame
+chown -R "${TARGET_USER}:${TARGET_USER}" /var/lib/photo-frame
 
 mkdir -p "${INSTALL_ROOT}"
 cp -a "${PROJECT_ROOT}/scripts" "${INSTALL_ROOT}/"
@@ -52,7 +91,12 @@ systemctl disable dnsmasq >/dev/null 2>&1 || true
 
 
 echo "Installing systemd services..."
-install -m 0644 "${INSTALL_ROOT}/systemd/photo-frame.service" /etc/systemd/system/photo-frame.service
+sed \
+  -e "s|^User=.*|User=${TARGET_USER}|" \
+  -e "s|^Group=.*|Group=${TARGET_USER}|" \
+  -e "s|^Environment=HOME=.*|Environment=HOME=${TARGET_HOME}|" \
+  -e "s|^WorkingDirectory=.*|WorkingDirectory=${TARGET_HOME}|" \
+  "${INSTALL_ROOT}/systemd/photo-frame.service" > /etc/systemd/system/photo-frame.service
 install -m 0644 "${INSTALL_ROOT}/systemd/photo-frame-wifi-bootstrap.service" /etc/systemd/system/photo-frame-wifi-bootstrap.service
 install -m 0644 "${INSTALL_ROOT}/systemd/photo-frame-setup-mode.service" /etc/systemd/system/photo-frame-setup-mode.service
 install -m 0644 "${INSTALL_ROOT}/systemd/photo-frame-setup-portal.service" /etc/systemd/system/photo-frame-setup-portal.service
@@ -64,7 +108,7 @@ systemctl enable photo-frame-wifi-bootstrap.service
 
 echo "Configuring Samba share..."
 if ! grep -q "BEGIN PHOTO-FRAME SHARE" /etc/samba/smb.conf; then
-  cat "${INSTALL_ROOT}/config/smb-share.conf" >> /etc/samba/smb.conf
+  sed "s|^\s*valid users = .*|   valid users = ${TARGET_USER}|" "${INSTALL_ROOT}/config/smb-share.conf" >> /etc/samba/smb.conf
 fi
 
 systemctl enable smbd
@@ -76,8 +120,8 @@ cat <<'EOF'
 Base install complete.
 
 Next steps:
-1. Set Samba password for user pi:
-   sudo smbpasswd -a pi
+1. Set Samba password for the target user shown above:
+  sudo smbpasswd -a <target-user>
 2. Optionally customize onboarding AP credentials in /etc/hostapd/hostapd.conf
 3. Reboot:
    sudo reboot
