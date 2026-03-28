@@ -13,4 +13,5 @@ exec feh \
   --randomize \
   --slideshow-delay 10 \
   --reload 15 \
+  --exclude "^\._|^\.DS_Store" \
   /srv/photos
