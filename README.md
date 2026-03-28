@@ -8,7 +8,7 @@ A lightweight, headless photo slideshow application for Raspberry Pi Zero with a
 - **Automatic Wi-Fi onboarding portal** when device cannot connect to a known network
 - **SMB network share** for adding/removing photos from phones, laptops, or other devices on the same local network
 - **Automatic reconnection** with saved Wi-Fi credentials
-- **Minimal resource footprint** using Xvfb, feh, and hostapd (appropriate for Pi Zero)
+- **Minimal resource footprint** using Xorg, feh, and hostapd (appropriate for Pi Zero)
 - **Systemd services** for reliable boot and auto-restart
 
 ## Hardware Requirements
@@ -36,25 +36,28 @@ Use **Raspberry Pi Imager** with these advanced settings:
 
 ```bash
 # On your development machine
-scp -r /path/to/photo-frame pi@photo-frame.local:~/photo-frame
+# (Replace 'photo' with your actual username if different)
+scp -r /path/to/photo-frame photo@photo-frame.local:~/photo-frame
 
 # Or clone directly
-# ssh pi@photo-frame.local
+# ssh photo@photo-frame.local
 # git clone <this-repo> ~/photo-frame
 ```
 
 ### 3. Run installer
 
 ```bash
-ssh pi@photo-frame.local
+ssh photo@photo-frame.local
 cd ~/photo-frame
 sudo bash scripts/install_initial_setup.sh
+# The installer auto-detects your user and configures everything
 ```
 
 ### 4. Set SMB password
 
 ```bash
-sudo smbpasswd -a pi
+# Replace 'photo' with your actual username
+sudo smbpasswd -a photo
 ```
 
 Choose a password for the file share.
@@ -76,7 +79,7 @@ After reboot:
 
 - **Windows**: `\\photo-frame\photos`
 - **macOS/Linux**: `smb://photo-frame/photos`
-- **Username**: pi
+- **Username**: (your Pi username, e.g., `photo` or `pi`)
 - **Password**: (the SMB password you set)
 
 ### Setup mode: Access the onboarding portal
@@ -133,8 +136,9 @@ Supported formats: JPEG, PNG. Slideshow auto-reloads every 15 seconds.
 ### Force onboarding mode (manual reconfiguration)
 
 ```bash
-ssh pi@photo-frame.local
-sudo touch /boot/force-onboarding
+ssh photo@photo-frame.local
+# On Bookworm, boot partition is at /boot/firmware/
+sudo touch /boot/firmware/force-onboarding
 sudo reboot
 ```
 
@@ -143,7 +147,7 @@ At next boot, setup mode activates and you can enter new Wi-Fi credentials.
 ### Check service status
 
 ```bash
-ssh pi@photo-frame.local
+ssh photo@photo-frame.local
 systemctl status photo-frame
 journalctl -u photo-frame -f
 ```
@@ -153,7 +157,7 @@ journalctl -u photo-frame -f
 If device is in setup AP mode and you need shell access:
 
 ```bash
-ssh pi@192.168.4.1
+ssh photo@192.168.4.1
 ```
 
 ## Performance Notes
@@ -180,21 +184,21 @@ journalctl -u photo-frame-wifi-bootstrap -n 50
 
 Common causes:
 - No photos in `/srv/photos` (add at least one JPEG/PNG)
-- Display not detected (verify with `cat /var/log/Xvfb.log` and `ps aux | grep feh`)
+- Display not detected (verify with `cat /var/log/Xorg.0.log` and `ps aux | grep feh`)
 - Permission issue on photo directory (verify: `ls -ld /srv/photos`)
 
 ### Can't connect to SMB share
 
 - Verify device is on network: `ping photo-frame.local`
-- Verify SMB password was set: `sudo smbpasswd -l | grep pi`
-- Check share exists: `smbclient -L photo-frame -U pi`
+- Verify SMB password was set: `sudo smbpasswd -l` (check your username in output)
+- Check share exists: `smbclient -L photo-frame -U photo` (replace `photo` with your username)
 
 ### Stuck in setup mode after valid entry
 
 This usually indicates a Wi-Fi credential mismatch or weak signal. Try:
 
 ```bash
-ssh pi@192.168.4.1
+ssh photo@192.168.4.1
 wpa_cli -i wlan0 status
 ```
 
