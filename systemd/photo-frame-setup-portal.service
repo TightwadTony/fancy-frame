@@ -1,0 +1,13 @@
+[Unit]
+Description=Photo Frame Wi-Fi Setup Portal
+After=photo-frame-setup-mode.service
+Requires=photo-frame-setup-mode.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/photo-frame/portal/app.py
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

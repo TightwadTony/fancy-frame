@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Photo Frame Wi-Fi Setup</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+      background: #f8fafc;
+      color: #1f2937;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+    }
+    .card {
+      width: 100%;
+      max-width: 640px;
+      background: #ffffff;
+      border-radius: 14px;
+      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.12);
+      padding: 24px;
+    }
+    h1 {
+      margin: 0 0 10px;
+      font-size: 1.4rem;
+    }
+    .ok {
+      color: #166534;
+    }
+    .bad {
+      color: #991b1b;
+    }
+    pre {
+      white-space: pre-wrap;
+      background: #0f172a;
+      color: #e2e8f0;
+      border-radius: 8px;
+      padding: 12px;
+      overflow-x: auto;
+    }
+    a {
+      display: inline-block;
+      margin-top: 16px;
+      color: #0f766e;
+      font-weight: 700;
+    }
+  </style>
+</head>
+<body>
+  <main class="card">
+    {% if success %}
+      <h1 class="ok">Success</h1>
+    {% else %}
+      <h1 class="bad">Connection Failed</h1>
+    {% endif %}
+
+    <p>{{ message }}</p>
+
+    {% if details %}
+      <h2>Debug Details</h2>
+      <pre>{{ details }}</pre>
+    {% endif %}
+
+    <a href="/">Back to Wi-Fi Setup</a>
+  </main>
+</body>
+</html>

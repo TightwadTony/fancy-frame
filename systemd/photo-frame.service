@@ -1,0 +1,16 @@
+[Unit]
+Description=Photo Frame Slideshow
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=pi
+Group=pi
+Environment=HOME=/home/pi
+WorkingDirectory=/home/pi
+ExecStart=/usr/bin/xinit /opt/photo-frame/scripts/start-slideshow.sh -- :0 vt1 -nolisten tcp
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
