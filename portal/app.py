@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import re
 import subprocess
+import threading
 from typing import List
 
 from flask import Flask, render_template, request
@@ -40,27 +41,25 @@ def save():
     if len(password) < 8:
         return render_template("result.html", success=False, message="Password must be at least 8 characters.")
 
-    proc = subprocess.run(
-        ["/opt/photo-frame/scripts/connect_wifi.sh", ssid, password, country],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        timeout=90,
-    )
-
-    if proc.returncode == 0:
-        subprocess.Popen(["bash", "-lc", "sleep 2 && systemctl reboot"])
-        return render_template(
-            "result.html",
-            success=True,
-            message="Wi-Fi saved. The photo frame is rebooting now.",
+    def run_connect():
+        proc = subprocess.run(
+            ["/opt/photo-frame/scripts/connect_wifi.sh", ssid, password, country],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            timeout=90,
         )
+
+        if proc.returncode == 0:
+            subprocess.Popen(["bash", "-lc", "sleep 2 && systemctl reboot"])
+
+    thread = threading.Thread(target=run_connect, daemon=True)
+    thread.start()
 
     return render_template(
         "result.html",
-        success=False,
-        message="Could not connect with those credentials. Please try again.",
-        details=proc.stdout[-1200:],
+        success=True,
+        message="Credentials received. Please wait 30-60 seconds...",
     )
 
 
