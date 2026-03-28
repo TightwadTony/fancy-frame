@@ -277,6 +277,10 @@ else
 fi
 install -m 0644 "${INSTALL_ROOT}/config/dnsmasq-photo-frame.conf" /etc/dnsmasq.d/photo-frame.conf
 
+# Ensure setup-mode scripts can start these services on demand.
+systemctl unmask hostapd >/dev/null 2>&1 || true
+systemctl unmask dnsmasq >/dev/null 2>&1 || true
+
 systemctl disable hostapd >/dev/null 2>&1 || true
 systemctl disable dnsmasq >/dev/null 2>&1 || true
 
