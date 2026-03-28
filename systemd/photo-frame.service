@@ -4,10 +4,10 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-User=pi
-Group=pi
-Environment=HOME=/home/pi
-WorkingDirectory=/home/pi
+User=root
+Group=root
+Environment=HOME=/root
+WorkingDirectory=/root
 ExecStart=/usr/bin/xinit /opt/photo-frame/scripts/start-slideshow.sh -- :0 -nolisten tcp
 Restart=always
 RestartSec=3

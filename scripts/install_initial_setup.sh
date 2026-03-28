@@ -257,12 +257,7 @@ systemctl disable dnsmasq >/dev/null 2>&1 || true
 
 
 echo "Installing systemd services..."
-sed \
-  -e "s|^User=.*|User=${TARGET_USER}|" \
-  -e "s|^Group=.*|Group=${TARGET_USER}|" \
-  -e "s|^Environment=HOME=.*|Environment=HOME=${TARGET_HOME}|" \
-  -e "s|^WorkingDirectory=.*|WorkingDirectory=${TARGET_HOME}|" \
-  "${INSTALL_ROOT}/systemd/photo-frame.service" > /etc/systemd/system/photo-frame.service
+install -m 0644 "${INSTALL_ROOT}/systemd/photo-frame.service" /etc/systemd/system/photo-frame.service
 install -m 0644 "${INSTALL_ROOT}/systemd/photo-frame-wifi-bootstrap.service" /etc/systemd/system/photo-frame-wifi-bootstrap.service
 install -m 0644 "${INSTALL_ROOT}/systemd/photo-frame-setup-mode.service" /etc/systemd/system/photo-frame-setup-mode.service
 install -m 0644 "${INSTALL_ROOT}/systemd/photo-frame-setup-portal.service" /etc/systemd/system/photo-frame-setup-portal.service
