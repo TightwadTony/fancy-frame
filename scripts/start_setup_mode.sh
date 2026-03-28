@@ -3,8 +3,12 @@ set -euo pipefail
 
 rfkill unblock wifi || true
 
+# Prevent client-mode daemons from reclaiming wlan0 while AP mode is active.
+systemctl stop dhcpcd.service >/dev/null 2>&1 || true
 systemctl stop wpa_supplicant.service >/dev/null 2>&1 || true
 systemctl stop wpa_supplicant@wlan0.service >/dev/null 2>&1 || true
+systemctl mask wpa_supplicant.service >/dev/null 2>&1 || true
+systemctl mask wpa_supplicant@wlan0.service >/dev/null 2>&1 || true
 
 # Some Raspberry Pi images ship hostapd masked by default.
 systemctl unmask hostapd.service >/dev/null 2>&1 || true

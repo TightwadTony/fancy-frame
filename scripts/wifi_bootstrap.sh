@@ -2,6 +2,7 @@
 set -euo pipefail
 
 WAIT_SECONDS=60
+FORCE_ONBOARDING_STATE="/var/lib/photo-frame/force-onboarding-active"
 
 # Bookworm moved boot to /boot/firmware/; check both for compatibility
 FORCE_FLAG="/boot/firmware/force-onboarding"
@@ -16,7 +17,16 @@ is_wifi_connected() {
 }
 
 if [[ -f "${FORCE_FLAG}" ]]; then
+  mkdir -p /var/lib/photo-frame
+  touch "${FORCE_ONBOARDING_STATE}"
   rm -f "${FORCE_FLAG}"
+  systemctl start photo-frame-setup-mode.service
+  systemctl start photo-frame-setup-portal.service
+  exit 0
+fi
+
+# Keep setup mode active across reboots until new credentials are applied.
+if [[ -f "${FORCE_ONBOARDING_STATE}" ]]; then
   systemctl start photo-frame-setup-mode.service
   systemctl start photo-frame-setup-portal.service
   exit 0

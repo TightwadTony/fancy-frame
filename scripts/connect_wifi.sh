@@ -54,6 +54,8 @@ for _ in $(seq 1 40); do
   CURRENT_SSID="$(iwgetid -r 2>/dev/null || true)"
   if [[ "${CURRENT_SSID}" == "${SSID}" ]] && ip -4 addr show wlan0 | grep -q 'inet '; then
     touch /var/lib/photo-frame/wifi-configured
+    rm -f /var/lib/photo-frame/force-onboarding-active || true
+    rm -f /boot/firmware/force-onboarding /boot/force-onboarding || true
     exit 0
   fi
   sleep 1
