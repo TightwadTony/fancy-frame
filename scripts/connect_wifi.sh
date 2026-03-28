@@ -61,4 +61,8 @@ for _ in $(seq 1 40); do
   sleep 1
 done
 
+# If connection fails, immediately return to setup AP mode so the user can retry.
+/opt/photo-frame/scripts/start_setup_mode.sh >/dev/null 2>&1 || true
+systemctl restart photo-frame-setup-portal.service >/dev/null 2>&1 || true
+
 exit 1
