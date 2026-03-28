@@ -172,6 +172,24 @@ EOF
   fi
 }
 
+configure_boot_target() {
+  # Disable lightdm display manager and boot to console (multi-user) target
+  if systemctl list-units --all --no-pager 2>/dev/null | grep -q 'lightdm'; then
+    echo "Disabling lightdm.service..."
+    systemctl disable lightdm.service >/dev/null 2>&1 || true
+    systemctl stop lightdm.service >/dev/null 2>&1 || true
+  fi
+
+  # Set default boot target to multi-user (console-only) instead of graphical
+  echo "Setting default boot target to multi-user.target..."
+  systemctl set-default multi-user.target >/dev/null 2>&1
+
+  # Verify
+  local default_target
+  default_target="$(systemctl get-default)"
+  echo "Current default boot target: ${default_target}"
+}
+
 configure_samba_tuning() {
   if grep -q "BEGIN PHOTO-FRAME SMB TUNING" /etc/samba/smb.conf; then
     awk '
@@ -346,6 +364,9 @@ systemctl enable avahi-daemon
 
 echo "Configuring Xorg permissions..."
 configure_xorg_permissions
+
+echo "Configuring boot target (console-only)..."
+configure_boot_target
 
 echo "Configuring no-splash boot..."
 configure_no_splash_boot
