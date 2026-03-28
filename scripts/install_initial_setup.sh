@@ -148,13 +148,15 @@ configure_wifi_powersave_off() {
   cat > /etc/systemd/system/wifi-powersave-off.service <<'EOF'
 [Unit]
 Description=Disable WiFi power saving on wlan0
-After=network-pre.target
-Before=network.target
+After=network-online.target wpa_supplicant.service
+Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/sbin/iw dev wlan0 set power_save off
+ExecStart=/bin/sh -c 'for i in $(seq 1 30); do if command -v iw >/dev/null 2>&1 && ip link show wlan0 >/dev/null 2>&1; then $(command -v iw) dev wlan0 set power_save off && exit 0; fi; sleep 1; done; exit 1'
 RemainAfterExit=yes
+Restart=on-failure
+RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
@@ -163,6 +165,11 @@ EOF
   systemctl daemon-reload
   systemctl enable wifi-powersave-off.service
   systemctl start wifi-powersave-off.service || true
+
+  # Apply immediately in the current boot too, in case the service start race is missed.
+  if command -v iw >/dev/null 2>&1 && ip link show wlan0 >/dev/null 2>&1; then
+    "$(command -v iw)" dev wlan0 set power_save off || true
+  fi
 }
 
 configure_samba_tuning() {
