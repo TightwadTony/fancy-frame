@@ -89,18 +89,27 @@ echo "Using target user: ${TARGET_USER}"
 echo "SMB mode: ${SMB_MODE}"
 
 configure_no_splash_boot() {
-  local cmdline_file="/boot/cmdline.txt"
-  local cmdline
+  local cmdline_file=""
 
-  if [[ ! -f "${cmdline_file}" ]]; then
-    echo "Skipping no-splash config: ${cmdline_file} not found."
+  # Bookworm moves boot partition to /boot/firmware; fall back to /boot
+  if [[ -f "/boot/firmware/cmdline.txt" ]]; then
+    cmdline_file="/boot/firmware/cmdline.txt"
+  elif [[ -f "/boot/cmdline.txt" ]]; then
+    cmdline_file="/boot/cmdline.txt"
+  else
+    echo "Skipping no-splash config: cmdline.txt not found in /boot/firmware or /boot."
     return 0
   fi
 
+  local cmdline
   cmdline="$(tr -d '\n' < "${cmdline_file}")"
+
+  # Remove splash token wherever it appears
   cmdline="${cmdline// splash / }"
-  cmdline="${cmdline#splash }"
-  cmdline="${cmdline%splash}"
+  cmdline="${cmdline# splash}"
+  cmdline="${cmdline% splash}"
+  cmdline="${cmdline//splash /}"
+  cmdline="${cmdline//splash/}"
 
   if [[ " ${cmdline} " != *" logo.nologo "* ]]; then
     cmdline+=" logo.nologo"
@@ -110,7 +119,17 @@ configure_no_splash_boot() {
     cmdline+=" vt.global_cursor_default=0"
   fi
 
+  # Collapse multiple spaces
+  cmdline="$(echo "${cmdline}" | tr -s ' ' | sed 's/^ //;s/ $//')"
+
   echo "${cmdline}" > "${cmdline_file}"
+  echo "Updated: ${cmdline_file}"
+
+  # Disable plymouth splash service if present (source of Pi Desktop welcome screen)
+  if systemctl list-units --all --no-pager 2>/dev/null | grep -q 'plymouth'; then
+    systemctl disable plymouth.service >/dev/null 2>&1 || true
+    systemctl mask plymouth.service >/dev/null 2>&1 || true
+  fi
 }
 
 configure_wifi_powersave_off() {
