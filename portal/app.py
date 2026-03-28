@@ -42,6 +42,7 @@ def save():
         return render_template("result.html", success=False, message="Password must be at least 8 characters.")
 
     def run_connect():
+        import time; time.sleep(3)  # Allow response to be delivered before AP goes down
         proc = subprocess.run(
             ["/opt/photo-frame/scripts/connect_wifi.sh", ssid, password, country],
             stdout=subprocess.PIPE,
