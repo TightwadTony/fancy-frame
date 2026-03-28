@@ -30,9 +30,9 @@ if [[ -z "${COUNTRY_ESCAPED}" ]]; then
 fi
 
 mkdir -p /var/lib/photo-frame
-cp /etc/wpa_supplicant/wpa_supplicant.conf "/var/lib/photo-frame/wpa_supplicant.conf.bak.$(date +%s)" >/dev/null 2>&1 || true
+cp /etc/wpa_supplicant/wpa_supplicant-wlan0.conf "/var/lib/photo-frame/wpa_supplicant.conf.bak.$(date +%s)" >/dev/null 2>&1 || true
 
-cat > /etc/wpa_supplicant/wpa_supplicant.conf <<EOF
+cat > /etc/wpa_supplicant/wpa_supplicant-wlan0.conf <<EOF
 ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
 update_config=1
 country=${COUNTRY_ESCAPED}
@@ -43,7 +43,7 @@ network={
     key_mgmt=WPA-PSK
 }
 EOF
-chmod 600 /etc/wpa_supplicant/wpa_supplicant.conf
+chmod 600 /etc/wpa_supplicant/wpa_supplicant-wlan0.conf
 
 /opt/photo-frame/scripts/stop_setup_mode.sh
 
