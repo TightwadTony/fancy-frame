@@ -132,6 +132,18 @@ configure_no_splash_boot() {
   fi
 }
 
+configure_xorg_permissions() {
+  # Allow non-root users to start Xorg (needed on Bookworm for VT access)
+  mkdir -p /etc/X11
+  cat > /etc/X11/Xwrapper.config <<'EOF'
+allowed_users=anybody
+needs_root_rights=yes
+EOF
+
+  # Add user to groups required for display, input, and VT access
+  usermod -aG video,input,tty "${TARGET_USER}" || true
+}
+
 configure_wifi_powersave_off() {
   cat > /etc/systemd/system/wifi-powersave-off.service <<'EOF'
 [Unit]
@@ -329,6 +341,9 @@ fi
 systemctl enable smbd
 systemctl restart smbd
 systemctl enable avahi-daemon
+
+echo "Configuring Xorg permissions..."
+configure_xorg_permissions
 
 echo "Configuring no-splash boot..."
 configure_no_splash_boot
