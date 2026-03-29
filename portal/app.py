@@ -48,7 +48,6 @@ def save():
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
-            timeout=90,
         )
 
         if proc.returncode == 0:

@@ -50,16 +50,38 @@ chmod 600 /etc/wpa_supplicant/wpa_supplicant-wlan0.conf
 wpa_cli -i wlan0 reconfigure >/dev/null 2>&1 || true
 systemctl restart dhcpcd.service >/dev/null 2>&1 || true
 
-for _ in $(seq 1 40); do
-  CURRENT_SSID="$(iwgetid -r 2>/dev/null || true)"
-  if [[ "${CURRENT_SSID}" == "${SSID}" ]] && ip -4 addr show wlan0 | grep -q 'inet '; then
-    touch /var/lib/photo-frame/wifi-configured
-    rm -f /var/lib/photo-frame/force-onboarding-active || true
-    rm -f /boot/firmware/force-onboarding /boot/force-onboarding || true
-    exit 0
+ASSOCIATED_WITH_TARGET=0
+
+for i in $(seq 1 90); do
+  STATUS="$(wpa_cli -i wlan0 status 2>/dev/null || true)"
+  CURRENT_SSID="$(printf '%s\n' "${STATUS}" | awk -F= '/^ssid=/{print $2; exit}')"
+  WPA_STATE="$(printf '%s\n' "${STATUS}" | awk -F= '/^wpa_state=/{print $2; exit}')"
+
+  if [[ "${CURRENT_SSID}" == "${SSID}" ]] && [[ "${WPA_STATE}" == "COMPLETED" ]]; then
+    ASSOCIATED_WITH_TARGET=1
+    if ip -4 addr show wlan0 | grep -q 'inet '; then
+      touch /var/lib/photo-frame/wifi-configured
+      rm -f /var/lib/photo-frame/force-onboarding-active || true
+      rm -f /boot/firmware/force-onboarding /boot/force-onboarding || true
+      exit 0
+    fi
+
+    # If authentication completed but DHCP is slow, periodically nudge dhcpcd.
+    if (( i % 10 == 0 )); then
+      systemctl restart dhcpcd.service >/dev/null 2>&1 || true
+    fi
   fi
+
   sleep 1
 done
+
+# If association succeeded but DHCP was delayed, avoid flipping back to AP mode.
+if [[ "${ASSOCIATED_WITH_TARGET}" -eq 1 ]]; then
+  touch /var/lib/photo-frame/wifi-configured
+  rm -f /var/lib/photo-frame/force-onboarding-active || true
+  rm -f /boot/firmware/force-onboarding /boot/force-onboarding || true
+  exit 0
+fi
 
 # If connection fails, immediately return to setup AP mode so the user can retry.
 /opt/photo-frame/scripts/start_setup_mode.sh >/dev/null 2>&1 || true
