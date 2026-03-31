@@ -245,7 +245,7 @@ apt update
 apt install -y \
   xserver-xorg \
   xinit \
-  feh \
+  mpv \
   samba \
   avahi-daemon \
   hostapd \
