@@ -23,6 +23,13 @@ fi
 exec mpv \
   --vo=gpu \
   --hwdec=auto \
+  --profile=gpu-hq \
+  --scale=ewa_lanczossharp \
+  --cscale=ewa_lanczossharp \
+  --dscale=mitchell \
+  --sigmoid-upscaling=yes \
+  --correct-downscaling=yes \
+  --dither-depth=auto \
   --image-display-duration=25 \
   --loop-playlist=inf \
   --shuffle \
