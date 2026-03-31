@@ -5,6 +5,7 @@ A lightweight, headless photo slideshow application for Raspberry Pi Zero with a
 ## Features
 
 - **Full-screen slideshow** on connected LCD panel (no desktop needed)
+- **Automatic playlist refresh every 5 minutes** to pick up new/removed photos
 - **Automatic Wi-Fi onboarding portal** when device cannot connect to a known network
 - **SMB network share** for adding/removing photos from phones, laptops, or other devices on the same local network
 - **Automatic reconnection** with saved Wi-Fi credentials

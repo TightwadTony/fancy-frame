@@ -26,6 +26,8 @@ exec mpv \
   --image-display-duration=25 \
   --loop-playlist=inf \
   --shuffle \
+  --script=/opt/photo-frame/scripts/mpv-reload.lua \
+  --script-opts=mpv_reload_interval=300,mpv_reload_dir=/srv/photos \
   --no-osc \
   --no-input-default-bindings \
   --cursor-autohide=always \
