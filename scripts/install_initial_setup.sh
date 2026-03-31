@@ -362,6 +362,25 @@ else
 EOF
 fi
 
+if grep -q "BEGIN PHOTO-FRAME HOMES" /etc/samba/smb.conf; then
+  awk '
+    /# BEGIN PHOTO-FRAME HOMES/ {skip=1; next}
+    /# END PHOTO-FRAME HOMES/ {skip=0; next}
+    !skip {print}
+  ' /etc/samba/smb.conf > /tmp/smb.conf.photo-frame.tmp
+  cp /tmp/smb.conf.photo-frame.tmp /etc/samba/smb.conf
+  rm -f /tmp/smb.conf.photo-frame.tmp
+fi
+
+cat >> /etc/samba/smb.conf <<EOF
+
+# BEGIN PHOTO-FRAME HOMES
+[homes]
+   browseable = no
+   available = no
+# END PHOTO-FRAME HOMES
+EOF
+
 systemctl enable smbd
 systemctl restart smbd
 systemctl enable avahi-daemon
