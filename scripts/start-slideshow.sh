@@ -9,9 +9,12 @@ sleep 2
 
 exec feh \
   --fullscreen \
+  --auto-rotate \
   --auto-zoom \
   --randomize \
-  --slideshow-delay 10 \
+  --slideshow-delay 25 \
+  --quiet \
+  --hide-pointer \
   --reload 15 \
   --exclude "^\._|^\.DS_Store" \
   /srv/photos
