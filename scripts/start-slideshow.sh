@@ -55,6 +55,22 @@ export PHOTO_FRAME_SLIDE_SECONDS="${SLIDE_SECONDS}"
 kodi --standalone --windowing=x11 &
 KODI_PID=$!
 
+# On first boot, Kodi shows a "Spectrum" visualization addon prompt that blocks
+# the slideshow. Wait for Kodi to create its addons DB, then disable the addon
+# so it doesn't prompt on subsequent starts either.
+(
+  for _ in $(seq 1 60); do
+    db="$(ls /root/.kodi/userdata/Database/Addons*.db 2>/dev/null | head -1)"
+    if [[ -f "${db}" ]]; then
+      sqlite3 "${db}" \
+        "UPDATE installed SET enabled=0 WHERE addonID='visualization.spectrum'" \
+        2>/dev/null || true
+      exit 0
+    fi
+    sleep 1
+  done
+) &
+
 # Additional safety net: push slideshow actions via kodi-send during startup,
 # then refresh every N seconds so newly added photos are picked up.
 if command -v kodi-send >/dev/null 2>&1; then
@@ -67,6 +83,9 @@ if command -v kodi-send >/dev/null 2>&1; then
 
       # Retry slideshow start less aggressively to avoid constant restarts.
       if [[ "${i}" -eq 1 || $(( i % 5 )) -eq 0 ]]; then
+        # Dismiss any first-run dialogs (e.g. addon prompts) before navigating.
+        kodi-send --action="Back" >/dev/null 2>&1 || true
+        sleep 1
         kodi-send --action="ActivateWindow(Pictures,/srv/photos,return)" >/dev/null 2>&1 || true
         sleep 1
         kodi-send --action="SlideShow(/srv/photos,recursive,random)" >/dev/null 2>&1 || true
