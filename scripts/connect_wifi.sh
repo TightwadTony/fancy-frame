@@ -32,20 +32,33 @@ fi
 mkdir -p /var/lib/photo-frame
 cp /etc/wpa_supplicant/wpa_supplicant-wlan0.conf "/var/lib/photo-frame/wpa_supplicant.conf.bak.$(date +%s)" >/dev/null 2>&1 || true
 
-cat > /etc/wpa_supplicant/wpa_supplicant-wlan0.conf <<EOF
-ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
+WPA_CONFIG_CONTENT="ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
 update_config=1
 country=${COUNTRY_ESCAPED}
 
 network={
-    ssid="${SSID_ESCAPED}"
-    psk="${PSK_ESCAPED}"
+    ssid=\"${SSID_ESCAPED}\"
+    psk=\"${PSK_ESCAPED}\"
     key_mgmt=WPA-PSK
 }
-EOF
+"
+
+printf '%s\n' "${WPA_CONFIG_CONTENT}" > /etc/wpa_supplicant/wpa_supplicant-wlan0.conf
 chmod 600 /etc/wpa_supplicant/wpa_supplicant-wlan0.conf
 
+# Keep both config paths in sync. Some images bring up wlan0 via the generic
+# wpa_supplicant.service, others via wpa_supplicant@wlan0.service.
+printf '%s\n' "${WPA_CONFIG_CONTENT}" > /etc/wpa_supplicant/wpa_supplicant.conf
+chmod 600 /etc/wpa_supplicant/wpa_supplicant.conf
+
 /opt/photo-frame/scripts/stop_setup_mode.sh
+
+# Use the wlan0 instance explicitly so we apply the intended config file.
+systemctl disable wpa_supplicant.service >/dev/null 2>&1 || true
+systemctl stop wpa_supplicant.service >/dev/null 2>&1 || true
+systemctl unmask wpa_supplicant@wlan0.service >/dev/null 2>&1 || true
+systemctl enable wpa_supplicant@wlan0.service >/dev/null 2>&1 || true
+systemctl restart wpa_supplicant@wlan0.service >/dev/null 2>&1 || true
 
 wpa_cli -i wlan0 reconfigure >/dev/null 2>&1 || true
 systemctl restart dhcpcd.service >/dev/null 2>&1 || true

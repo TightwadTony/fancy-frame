@@ -315,6 +315,12 @@ systemctl unmask dnsmasq >/dev/null 2>&1 || true
 systemctl disable hostapd >/dev/null 2>&1 || true
 systemctl disable dnsmasq >/dev/null 2>&1 || true
 
+# Use the wlan0-specific wpa_supplicant unit consistently.
+systemctl disable wpa_supplicant.service >/dev/null 2>&1 || true
+systemctl stop wpa_supplicant.service >/dev/null 2>&1 || true
+systemctl unmask wpa_supplicant@wlan0.service >/dev/null 2>&1 || true
+systemctl enable wpa_supplicant@wlan0.service >/dev/null 2>&1 || true
+
 
 echo "Installing systemd services..."
 install -m 0644 "${INSTALL_ROOT}/systemd/photo-frame.service" /etc/systemd/system/photo-frame.service
