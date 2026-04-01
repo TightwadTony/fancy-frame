@@ -271,6 +271,7 @@ apt install -y \
   avahi-daemon \
   hostapd \
   dnsmasq \
+  dhcpcd \
   python3-flask \
   iw \
   rfkill
