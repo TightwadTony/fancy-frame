@@ -7,6 +7,9 @@ xset s noblank
 
 sleep 2
 
+# Some distros place xscreensaver helper binaries outside the default PATH.
+export PATH="/usr/libexec/xscreensaver:/usr/lib/xscreensaver:${PATH}"
+
 if command -v glslideshow >/dev/null 2>&1; then
   GLSLIDESHOW_BIN="$(command -v glslideshow)"
 elif [[ -x "/usr/lib/xscreensaver/glslideshow" ]]; then
