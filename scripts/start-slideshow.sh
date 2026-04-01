@@ -21,24 +21,9 @@ mkdir -p /root/.kodi/userdata
 cat > /root/.kodi/userdata/autoexec.py <<'EOF'
 import os
 import time
-import json
 import xbmc
-import xbmcaddon
 
 PHOTO_DIR = '/srv/photos'
-SLIDE_SECONDS = int(os.environ.get('PHOTO_FRAME_SLIDE_SECONDS', '25'))
-
-def set_slide_time(seconds):
-  set_payload = '{"jsonrpc":"2.0","id":1,"method":"Settings.SetSettingValue","params":{"setting":"slideshow.staytime","value":%d}}' % seconds
-  set_resp = xbmc.executeJSONRPC(set_payload)
-  xbmc.log(f'photo-frame: SetSettingValue slideshow.staytime={seconds} resp={set_resp}', xbmc.LOGINFO)
-
-  # Fallback for builds that rely on GUI builtin setting path.
-  xbmc.executebuiltin(f'SetGUISetting(slideshow.staytime,{seconds})')
-
-  get_payload = '{"jsonrpc":"2.0","id":2,"method":"Settings.GetSettingValue","params":{"setting":"slideshow.staytime"}}'
-  get_resp = xbmc.executeJSONRPC(get_payload)
-  xbmc.log(f'photo-frame: GetSettingValue slideshow.staytime resp={get_resp}', xbmc.LOGINFO)
 
 def start_slideshow(attempt):
   if not os.path.isdir(PHOTO_DIR):
@@ -51,7 +36,6 @@ def start_slideshow(attempt):
 
 # Kodi can ignore slideshow commands very early in startup.
 # Retry for a short window so we don't get stuck on the empty library screen.
-set_slide_time(SLIDE_SECONDS)
 for i in range(1, 31):
   start_slideshow(i)
   time.sleep(1)
@@ -70,6 +54,7 @@ if command -v kodi-send >/dev/null 2>&1; then
       if ! kill -0 "${KODI_PID}" 2>/dev/null; then
         exit 0
       fi
+      kodi-send --action="SetGUISetting(slideshow.staytime,${SLIDE_SECONDS})" >/dev/null 2>&1 || true
       kodi-send --action="ActivateWindow(Pictures,/srv/photos,return)" >/dev/null 2>&1 || true
       sleep 1
       kodi-send --action="SlideShow(/srv/photos,recursive,random)" >/dev/null 2>&1 || true
@@ -81,6 +66,7 @@ if command -v kodi-send >/dev/null 2>&1; then
       if ! kill -0 "${KODI_PID}" 2>/dev/null; then
         exit 0
       fi
+      kodi-send --action="SetGUISetting(slideshow.staytime,${SLIDE_SECONDS})" >/dev/null 2>&1 || true
       kodi-send --action="ActivateWindow(Pictures,/srv/photos,return)" >/dev/null 2>&1 || true
       sleep 1
       kodi-send --action="SlideShow(/srv/photos,recursive,random)" >/dev/null 2>&1 || true
