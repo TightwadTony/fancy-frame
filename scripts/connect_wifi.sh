@@ -74,7 +74,6 @@ for i in $(seq 1 90); do
     ASSOCIATED_WITH_TARGET=1
     if ip -4 addr show wlan0 | grep -q 'inet '; then
       touch /var/lib/photo-frame/wifi-configured
-      rm -f /var/lib/photo-frame/force-onboarding-active || true
       rm -f /boot/firmware/force-onboarding /boot/force-onboarding || true
       exit 0
     fi
@@ -88,16 +87,13 @@ for i in $(seq 1 90); do
   sleep 1
 done
 
-# If association succeeded but DHCP was delayed, avoid flipping back to AP mode.
+# If association succeeded but DHCP was delayed, treat onboarding as successful.
 if [[ "${ASSOCIATED_WITH_TARGET}" -eq 1 ]]; then
   touch /var/lib/photo-frame/wifi-configured
-  rm -f /var/lib/photo-frame/force-onboarding-active || true
   rm -f /boot/firmware/force-onboarding /boot/force-onboarding || true
   exit 0
 fi
 
-# If connection fails, immediately return to setup AP mode so the user can retry.
-/opt/photo-frame/scripts/start_setup_mode.sh >/dev/null 2>&1 || true
-systemctl restart photo-frame-setup-portal.service >/dev/null 2>&1 || true
-
+# Do not force AP mode here. AP fallback is handled only by wifi_bootstrap.sh
+# during boot if there is no Wi-Fi after the configured timeout.
 exit 1
