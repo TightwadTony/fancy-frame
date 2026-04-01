@@ -51,9 +51,10 @@ def save():
         )
 
         if proc.returncode == 0:
-            subprocess.Popen(["bash", "-lc", "sleep 2 && systemctl reboot"])
+            time.sleep(1)
+            subprocess.run(["systemctl", "reboot"], check=False)
 
-    thread = threading.Thread(target=run_connect, daemon=True)
+    thread = threading.Thread(target=run_connect, daemon=False)
     thread.start()
 
     return render_template(
