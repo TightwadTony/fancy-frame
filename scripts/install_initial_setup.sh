@@ -246,6 +246,7 @@ apt install -y \
   xserver-xorg \
   xinit \
   kodi \
+  kodi-eventclients-kodi-send \
   samba \
   avahi-daemon \
   hostapd \

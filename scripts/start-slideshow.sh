@@ -38,4 +38,20 @@ for i in range(1, 31):
   time.sleep(1)
 EOF
 
-exec kodi --standalone --windowing=x11
+kodi --standalone --windowing=x11 &
+KODI_PID=$!
+
+# Additional safety net: push slideshow actions via kodi-send during startup.
+if command -v kodi-send >/dev/null 2>&1; then
+  for _ in $(seq 1 20); do
+    if ! kill -0 "${KODI_PID}" 2>/dev/null; then
+      break
+    fi
+    kodi-send --action="ActivateWindow(Pictures,/srv/photos,return)" >/dev/null 2>&1 || true
+    sleep 1
+    kodi-send --action="SlideShow(/srv/photos,recursive,random)" >/dev/null 2>&1 || true
+    sleep 2
+  done
+fi
+
+wait "${KODI_PID}"
