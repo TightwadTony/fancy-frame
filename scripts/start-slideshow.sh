@@ -51,5 +51,8 @@ EOF
     fi
   fi
 
+  # xscreensaver-getimage-file can return basenames from cache; run from photo dir.
+  cd /srv/photos
+
   exec "${GLSLIDESHOW_BIN}" --root --duration 25 --fade 2 --zoom 100 --pan 20
 done
