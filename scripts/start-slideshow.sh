@@ -28,11 +28,17 @@ while true; do
     continue
   fi
 
-  # glslideshow reads imageDirectory from ~/.xscreensaver rather than CLI paths.
+  # glslideshow uses XScreenSaver resource/env for image directory.
+  export XSCREENSAVER_IMAGE_DIRECTORY="/srv/photos"
+
+  # Keep a local resource file as fallback for systems that ignore env var.
   if [[ -n "${HOME:-}" ]]; then
     mkdir -p "${HOME}"
     cat > "${HOME}/.xscreensaver" <<'EOF'
-imageDirectory:    /srv/photos
+mode: one
+selected: 0
+imageDirectory: /srv/photos
+*imageDirectory: /srv/photos
 EOF
   fi
 
