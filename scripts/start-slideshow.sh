@@ -19,19 +19,22 @@ else
 fi
 
 while true; do
-  mapfile -t PLAYLIST < <(
-    find /srv/photos -maxdepth 1 -type f \
+  if ! find /srv/photos -maxdepth 1 -type f \
       \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' \
          -o -iname '*.gif' -o -iname '*.bmp' -o -iname '*.webp' \) \
-      ! -name '._*' ! -name '.DS_Store' \
-      | shuf
-  )
-
-  if [[ "${#PLAYLIST[@]}" -eq 0 ]]; then
+      ! -name '._*' ! -name '.DS_Store' | grep -q .; then
     echo "No images found in /srv/photos, waiting..."
     sleep 30
     continue
   fi
 
-  exec "${GLSLIDESHOW_BIN}" -root "${PLAYLIST[@]}"
+  # glslideshow reads imageDirectory from ~/.xscreensaver rather than CLI paths.
+  if [[ -n "${HOME:-}" ]]; then
+    mkdir -p "${HOME}"
+    cat > "${HOME}/.xscreensaver" <<'EOF'
+imageDirectory:    /srv/photos
+EOF
+  fi
+
+  exec "${GLSLIDESHOW_BIN}" --root --duration 25 --fade 2 --zoom 100 --pan 20
 done
