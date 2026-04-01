@@ -17,6 +17,15 @@ fi
 
 mkdir -p /root/.kodi/userdata
 
+cat > /root/.kodi/userdata/advancedsettings.xml <<EOF
+<advancedsettings>
+  <slideshow>
+    <staytime>${SLIDE_SECONDS}</staytime>
+    <displayeffects>true</displayeffects>
+  </slideshow>
+</advancedsettings>
+EOF
+
 # Auto-start a recursive randomized slideshow on Kodi launch.
 cat > /root/.kodi/userdata/autoexec.py <<'EOF'
 import os
