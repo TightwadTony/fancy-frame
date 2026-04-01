@@ -58,18 +58,18 @@ choose_smb_mode() {
     "")
       ;;
     *)
-      echo "Invalid SMB_ACCESS_MODE='${selected}'. Use 'anonymous' or 'credentials'."
+      echo "Invalid SMB_ACCESS_MODE='${selected}'. Use 'anonymous' or 'credentials'." >&2
       exit 1
       ;;
   esac
 
-  if [[ -t 0 ]]; then
-    echo
-    echo "Choose SMB share access mode:"
-    echo "  1) credentials (recommended)"
-    echo "  2) anonymous"
-    printf "Enter choice [1/2, default 1]: "
-    read -r smb_choice
+  if [[ -t 0 ]] && [[ -r /dev/tty ]] && [[ -w /dev/tty ]]; then
+    echo >&2
+    echo "Choose SMB share access mode:" >&2
+    echo "  1) credentials (recommended)" >&2
+    echo "  2) anonymous" >&2
+    printf "Enter choice [1/2, default 1]: " > /dev/tty
+    read -r smb_choice < /dev/tty
     case "${smb_choice}" in
       2)
         printf '%s' "anonymous"
