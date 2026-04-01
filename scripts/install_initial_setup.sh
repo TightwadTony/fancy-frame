@@ -248,6 +248,7 @@ apt install -y \
   xscreensaver \
   xscreensaver-gl \
   xscreensaver-data-extra \
+  imagemagick \
   samba \
   avahi-daemon \
   hostapd \
