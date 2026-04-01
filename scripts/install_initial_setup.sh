@@ -245,10 +245,7 @@ apt update
 apt install -y \
   xserver-xorg \
   xinit \
-  xscreensaver \
-  xscreensaver-gl \
-  xscreensaver-data-extra \
-  imagemagick \
+  kodi \
   samba \
   avahi-daemon \
   hostapd \
