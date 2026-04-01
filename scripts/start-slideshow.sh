@@ -7,6 +7,8 @@ xset s noblank
 
 sleep 2
 
+SLIDE_SECONDS="${PHOTO_FRAME_SLIDE_SECONDS:-25}"
+
 if ! command -v kodi >/dev/null 2>&1; then
   echo "kodi binary not found"
   exit 1
@@ -19,8 +21,14 @@ cat > /root/.kodi/userdata/autoexec.py <<'EOF'
 import os
 import time
 import xbmc
+import xbmcaddon
 
 PHOTO_DIR = '/srv/photos'
+SLIDE_SECONDS = int(os.environ.get('PHOTO_FRAME_SLIDE_SECONDS', '25'))
+
+def set_slide_time(seconds):
+  payload = '{"jsonrpc":"2.0","id":1,"method":"Settings.SetSettingValue","params":{"setting":"slideshow.staytime","value":%d}}' % seconds
+  xbmc.executeJSONRPC(payload)
 
 def start_slideshow(attempt):
   if not os.path.isdir(PHOTO_DIR):
@@ -33,10 +41,13 @@ def start_slideshow(attempt):
 
 # Kodi can ignore slideshow commands very early in startup.
 # Retry for a short window so we don't get stuck on the empty library screen.
+set_slide_time(SLIDE_SECONDS)
 for i in range(1, 31):
   start_slideshow(i)
   time.sleep(1)
 EOF
+
+export PHOTO_FRAME_SLIDE_SECONDS="${SLIDE_SECONDS}"
 
 kodi --standalone --windowing=x11 &
 KODI_PID=$!
