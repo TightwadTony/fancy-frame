@@ -40,6 +40,12 @@ selected: 0
 imageDirectory: /srv/photos
 *imageDirectory: /srv/photos
 EOF
+
+    # glslideshow reads settings from the X resource database.
+    # Without this merge, it can load "(null)" images and show checkerboards.
+    if command -v xrdb >/dev/null 2>&1; then
+      xrdb -merge "${HOME}/.xscreensaver" || true
+    fi
   fi
 
   exec "${GLSLIDESHOW_BIN}" --root --duration 25 --fade 2 --zoom 100 --pan 20
