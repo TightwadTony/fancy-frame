@@ -59,14 +59,19 @@ KODI_PID=$!
 # then refresh every N seconds so newly added photos are picked up.
 if command -v kodi-send >/dev/null 2>&1; then
   (
-    for _ in $(seq 1 20); do
+    for i in $(seq 1 20); do
       if ! kill -0 "${KODI_PID}" 2>/dev/null; then
         exit 0
       fi
       kodi-send --action="SetGUISetting(slideshow.staytime,${SLIDE_SECONDS})" >/dev/null 2>&1 || true
-      kodi-send --action="ActivateWindow(Pictures,/srv/photos,return)" >/dev/null 2>&1 || true
-      sleep 1
-      kodi-send --action="SlideShow(/srv/photos,recursive,random)" >/dev/null 2>&1 || true
+
+      # Retry slideshow start less aggressively to avoid constant restarts.
+      if [[ "${i}" -eq 1 || $(( i % 5 )) -eq 0 ]]; then
+        kodi-send --action="ActivateWindow(Pictures,/srv/photos,return)" >/dev/null 2>&1 || true
+        sleep 1
+        kodi-send --action="SlideShow(/srv/photos,recursive,random)" >/dev/null 2>&1 || true
+      fi
+
       sleep 2
     done
 
