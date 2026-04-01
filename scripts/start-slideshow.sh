@@ -7,38 +7,38 @@ xset s noblank
 
 sleep 2
 
-# Build a shuffled playlist of supported images, excluding macOS metadata files.
-PLAYLIST=$(find /srv/photos -maxdepth 1 -type f \
-  \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' \
-     -o -iname '*.gif' -o -iname '*.bmp' -o -iname '*.webp' \) \
-  ! -name '._*' ! -name '.DS_Store' \
-  | shuf)
+OUTPUT_VIDEO="/var/lib/photo-frame/slideshow.mp4"
 
-if [[ -z "${PLAYLIST}" ]]; then
-  echo "No images found in /srv/photos, waiting..."
-  sleep 30
-  exec "$0" "$@"
-fi
+while true; do
+  if [[ ! -f "${OUTPUT_VIDEO}" ]]; then
+    echo "No slideshow video yet — waiting for render..."
+    sleep 10
+    continue
+  fi
 
-exec mpv \
-  --vo=gpu \
-  --hwdec=auto \
-  --profile=gpu-hq \
-  --scale=ewa_lanczossharp \
-  --cscale=ewa_lanczossharp \
-  --dscale=mitchell \
-  --sigmoid-upscaling=yes \
-  --correct-downscaling=yes \
-  --dither-depth=auto \
-  --image-display-duration=25 \
-  --loop-playlist=inf \
-  --shuffle \
-  --script=/opt/photo-frame/scripts/mpv-reload.lua \
-  --script-opts=mpv_reload_interval=300,mpv_reload_dir=/srv/photos \
-  --no-osc \
-  --no-input-default-bindings \
-  --cursor-autohide=always \
-  --really-quiet \
-  --fs \
-  --video-unscaled=downscale-big \
-  ${PLAYLIST}
+  VIDEO_MTIME=$(stat -c %Y "${OUTPUT_VIDEO}")
+
+  mpv \
+    --vo=gpu \
+    --hwdec=auto \
+    --loop-file=inf \
+    --no-osc \
+    --no-input-default-bindings \
+    --cursor-autohide=always \
+    --really-quiet \
+    --fs \
+    "${OUTPUT_VIDEO}" &
+  MPV_PID=$!
+
+  # Re-check every 10s; restart mpv when a new render replaces the video file.
+  while kill -0 "${MPV_PID}" 2>/dev/null; do
+    sleep 10
+    CURRENT_MTIME=$(stat -c %Y "${OUTPUT_VIDEO}" 2>/dev/null || echo 0)
+    if [[ "${CURRENT_MTIME}" != "${VIDEO_MTIME}" ]]; then
+      echo "Slideshow video updated — restarting mpv."
+      kill "${MPV_PID}" 2>/dev/null || true
+      wait "${MPV_PID}" 2>/dev/null || true
+      break
+    fi
+  done
+done
