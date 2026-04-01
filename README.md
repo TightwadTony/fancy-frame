@@ -9,7 +9,7 @@ A lightweight, headless photo slideshow application for Raspberry Pi Zero with a
 - **Automatic Wi-Fi onboarding portal** when device cannot connect to a known network
 - **SMB network share** for adding/removing photos from phones, laptops, or other devices on the same local network
 - **Automatic reconnection** with saved Wi-Fi credentials
-- **Minimal resource footprint** using Xorg, mpv, and hostapd (appropriate for Pi Zero)
+- **Minimal resource footprint** using Xorg, glslideshow, and hostapd (appropriate for Pi Zero)
 - **Systemd services** for reliable boot and auto-restart
 
 ## Hardware Requirements
@@ -185,7 +185,7 @@ journalctl -u photo-frame-wifi-bootstrap -n 50
 
 Common causes:
 - No photos in `/srv/photos` (add at least one JPEG/PNG)
-- Display not detected (verify with `cat /var/log/Xorg.0.log` and `ps aux | grep mpv`)
+- Display not detected (verify with `cat /var/log/Xorg.0.log` and `ps aux | grep glslideshow`)
 - Permission issue on photo directory (verify: `ls -ld /srv/photos`)
 
 ### Can't connect to SMB share

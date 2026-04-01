@@ -7,38 +7,31 @@ xset s noblank
 
 sleep 2
 
-OUTPUT_VIDEO="/var/lib/photo-frame/slideshow.mp4"
+if command -v glslideshow >/dev/null 2>&1; then
+  GLSLIDESHOW_BIN="$(command -v glslideshow)"
+elif [[ -x "/usr/lib/xscreensaver/glslideshow" ]]; then
+  GLSLIDESHOW_BIN="/usr/lib/xscreensaver/glslideshow"
+elif [[ -x "/usr/libexec/xscreensaver/glslideshow" ]]; then
+  GLSLIDESHOW_BIN="/usr/libexec/xscreensaver/glslideshow"
+else
+  echo "glslideshow binary not found"
+  exit 1
+fi
 
 while true; do
-  if [[ ! -f "${OUTPUT_VIDEO}" ]]; then
-    echo "No slideshow video yet — waiting for render..."
-    sleep 10
+  mapfile -t PLAYLIST < <(
+    find /srv/photos -maxdepth 1 -type f \
+      \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' \
+         -o -iname '*.gif' -o -iname '*.bmp' -o -iname '*.webp' \) \
+      ! -name '._*' ! -name '.DS_Store' \
+      | shuf
+  )
+
+  if [[ "${#PLAYLIST[@]}" -eq 0 ]]; then
+    echo "No images found in /srv/photos, waiting..."
+    sleep 30
     continue
   fi
 
-  VIDEO_MTIME=$(stat -c %Y "${OUTPUT_VIDEO}")
-
-  mpv \
-    --vo=gpu \
-    --hwdec=auto \
-    --loop-file=inf \
-    --no-osc \
-    --no-input-default-bindings \
-    --cursor-autohide=always \
-    --really-quiet \
-    --fs \
-    "${OUTPUT_VIDEO}" &
-  MPV_PID=$!
-
-  # Re-check every 10s; restart mpv when a new render replaces the video file.
-  while kill -0 "${MPV_PID}" 2>/dev/null; do
-    sleep 10
-    CURRENT_MTIME=$(stat -c %Y "${OUTPUT_VIDEO}" 2>/dev/null || echo 0)
-    if [[ "${CURRENT_MTIME}" != "${VIDEO_MTIME}" ]]; then
-      echo "Slideshow video updated — restarting mpv."
-      kill "${MPV_PID}" 2>/dev/null || true
-      wait "${MPV_PID}" 2>/dev/null || true
-      break
-    fi
-  done
+  exec "${GLSLIDESHOW_BIN}" -root "${PLAYLIST[@]}"
 done

@@ -245,8 +245,9 @@ apt update
 apt install -y \
   xserver-xorg \
   xinit \
-  mpv \
-  ffmpeg \
+  xscreensaver \
+  xscreensaver-gl \
+  xscreensaver-data-extra \
   samba \
   avahi-daemon \
   hostapd \
@@ -291,12 +292,10 @@ install -m 0644 "${INSTALL_ROOT}/systemd/photo-frame.service" /etc/systemd/syste
 install -m 0644 "${INSTALL_ROOT}/systemd/photo-frame-wifi-bootstrap.service" /etc/systemd/system/photo-frame-wifi-bootstrap.service
 install -m 0644 "${INSTALL_ROOT}/systemd/photo-frame-setup-mode.service" /etc/systemd/system/photo-frame-setup-mode.service
 install -m 0644 "${INSTALL_ROOT}/systemd/photo-frame-setup-portal.service" /etc/systemd/system/photo-frame-setup-portal.service
-install -m 0644 "${INSTALL_ROOT}/systemd/photo-frame-render.service" /etc/systemd/system/photo-frame-render.service
 
 systemctl daemon-reload
 systemctl enable photo-frame.service
 systemctl enable photo-frame-wifi-bootstrap.service
-systemctl enable photo-frame-render.service
 
 
 echo "Configuring Samba share..."
