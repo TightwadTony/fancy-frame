@@ -8,11 +8,18 @@ FORCE_FLAG="/boot/firmware/force-onboarding"
 [[ -f "${FORCE_FLAG}" ]] || FORCE_FLAG="/boot/force-onboarding"
 
 is_wifi_connected() {
-  local ssid
+  local ssid status wpa_state
   ssid="$(iwgetid -r 2>/dev/null || true)"
-  [[ -n "${ssid}" ]] || return 1
-  ip -4 addr show wlan0 | grep -q 'inet ' || return 1
-  return 0
+
+  # Consider Wi-Fi connected once association/auth is complete, even if DHCP is
+  # still negotiating an IPv4 address.
+  if [[ -n "${ssid}" ]]; then
+    return 0
+  fi
+
+  status="$(wpa_cli -i wlan0 status 2>/dev/null || true)"
+  wpa_state="$(printf '%s\n' "${status}" | awk -F= '/^wpa_state=/{print $2; exit}')"
+  [[ "${wpa_state}" == "COMPLETED" ]]
 }
 
 # Manual override: touch /boot/firmware/force-onboarding then reboot.
