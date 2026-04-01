@@ -85,6 +85,21 @@ choose_smb_mode() {
 
 SMB_MODE="$(choose_smb_mode)"
 
+# Ask whether to run a full system upgrade before installing packages.
+RUN_UPGRADE="no"
+if [[ -n "${PHOTO_FRAME_UPGRADE:-}" ]]; then
+  case "${PHOTO_FRAME_UPGRADE,,}" in
+    yes|1|true) RUN_UPGRADE="yes" ;;
+  esac
+elif [[ -t 0 ]]; then
+  echo
+  printf "Run full apt upgrade before installing? [y/N]: "
+  read -r upgrade_choice
+  if [[ "${upgrade_choice,,}" == "y" || "${upgrade_choice,,}" == "yes" ]]; then
+    RUN_UPGRADE="yes"
+  fi
+fi
+
 echo "Using target user: ${TARGET_USER}"
 echo "SMB mode: ${SMB_MODE}"
 
@@ -242,6 +257,10 @@ EOF
 
 echo "Installing packages..."
 apt update
+if [[ "${RUN_UPGRADE}" == "yes" ]]; then
+  echo "Running full apt upgrade..."
+  apt upgrade -y
+fi
 apt install -y \
   xserver-xorg \
   xinit \
