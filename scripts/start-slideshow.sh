@@ -8,6 +8,7 @@ xset s noblank
 sleep 2
 
 SLIDE_SECONDS="${PHOTO_FRAME_SLIDE_SECONDS:-25}"
+REFRESH_SECONDS="${PHOTO_FRAME_REFRESH_SECONDS:-300}"
 
 if ! command -v kodi >/dev/null 2>&1; then
   echo "kodi binary not found"
@@ -52,17 +53,35 @@ export PHOTO_FRAME_SLIDE_SECONDS="${SLIDE_SECONDS}"
 kodi --standalone --windowing=x11 &
 KODI_PID=$!
 
-# Additional safety net: push slideshow actions via kodi-send during startup.
+# Additional safety net: push slideshow actions via kodi-send during startup,
+# then refresh every N seconds so newly added photos are picked up.
 if command -v kodi-send >/dev/null 2>&1; then
-  for _ in $(seq 1 20); do
-    if ! kill -0 "${KODI_PID}" 2>/dev/null; then
-      break
-    fi
-    kodi-send --action="ActivateWindow(Pictures,/srv/photos,return)" >/dev/null 2>&1 || true
-    sleep 1
-    kodi-send --action="SlideShow(/srv/photos,recursive,random)" >/dev/null 2>&1 || true
-    sleep 2
-  done
+  (
+    for _ in $(seq 1 20); do
+      if ! kill -0 "${KODI_PID}" 2>/dev/null; then
+        exit 0
+      fi
+      kodi-send --action="ActivateWindow(Pictures,/srv/photos,return)" >/dev/null 2>&1 || true
+      sleep 1
+      kodi-send --action="SlideShow(/srv/photos,recursive,random)" >/dev/null 2>&1 || true
+      sleep 2
+    done
+
+    while kill -0 "${KODI_PID}" 2>/dev/null; do
+      sleep "${REFRESH_SECONDS}"
+      if ! kill -0 "${KODI_PID}" 2>/dev/null; then
+        exit 0
+      fi
+      kodi-send --action="ActivateWindow(Pictures,/srv/photos,return)" >/dev/null 2>&1 || true
+      sleep 1
+      kodi-send --action="SlideShow(/srv/photos,recursive,random)" >/dev/null 2>&1 || true
+    done
+  ) &
+  REFRESH_PID=$!
 fi
 
 wait "${KODI_PID}"
+
+if [[ -n "${REFRESH_PID:-}" ]]; then
+  kill "${REFRESH_PID}" >/dev/null 2>&1 || true
+fi
