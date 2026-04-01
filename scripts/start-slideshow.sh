@@ -22,16 +22,19 @@ import xbmc
 
 PHOTO_DIR = '/srv/photos'
 
-def start_slideshow():
+def start_slideshow(attempt):
   if not os.path.isdir(PHOTO_DIR):
     xbmc.log(f'photo-frame: {PHOTO_DIR} missing; slideshow not started', xbmc.LOGERROR)
     return
+  xbmc.log(f'photo-frame: slideshow start attempt {attempt}', xbmc.LOGINFO)
+  xbmc.executebuiltin(f'ActivateWindow(Pictures,{PHOTO_DIR},return)')
+  xbmc.sleep(700)
   xbmc.executebuiltin(f'SlideShow({PHOTO_DIR},recursive,random)')
 
 # Kodi can ignore slideshow commands very early in startup.
 # Retry for a short window so we don't get stuck on the empty library screen.
-for _ in range(12):
-  start_slideshow()
+for i in range(1, 31):
+  start_slideshow(i)
   time.sleep(1)
 EOF
 
