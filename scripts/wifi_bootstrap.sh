@@ -2,40 +2,38 @@
 set -euo pipefail
 
 WAIT_SECONDS=60
-FORCE_ONBOARDING_STATE="/var/lib/photo-frame/force-onboarding-active"
 
 # Bookworm moved boot to /boot/firmware/; check both for compatibility
 FORCE_FLAG="/boot/firmware/force-onboarding"
 [[ -f "${FORCE_FLAG}" ]] || FORCE_FLAG="/boot/force-onboarding"
 
 is_wifi_connected() {
-  local ssid
+  local ssid status wpa_state
   ssid="$(iwgetid -r 2>/dev/null || true)"
-  [[ -n "${ssid}" ]] || return 1
-  ip -4 addr show wlan0 | grep -q 'inet ' || return 1
-  return 0
+
+  # Consider Wi-Fi connected once association/auth is complete, even if DHCP is
+  # still negotiating an IPv4 address.
+  if [[ -n "${ssid}" ]]; then
+    return 0
+  fi
+
+  status="$(wpa_cli -i wlan0 status 2>/dev/null || true)"
+  wpa_state="$(printf '%s\n' "${status}" | awk -F= '/^wpa_state=/{print $2; exit}')"
+  [[ "${wpa_state}" == "COMPLETED" ]]
 }
 
+# Manual override: touch /boot/firmware/force-onboarding then reboot.
 if [[ -f "${FORCE_FLAG}" ]]; then
-  mkdir -p /var/lib/photo-frame
-  touch "${FORCE_ONBOARDING_STATE}"
   rm -f "${FORCE_FLAG}"
   systemctl start photo-frame-setup-mode.service
   systemctl start photo-frame-setup-portal.service
   exit 0
 fi
 
-# Keep setup mode active across reboots until new credentials are applied.
-if [[ -f "${FORCE_ONBOARDING_STATE}" ]]; then
-  systemctl start photo-frame-setup-mode.service
-  systemctl start photo-frame-setup-portal.service
-  exit 0
-fi
-
+# Only fall back to AP mode if WiFi is not connected within 60 seconds of boot.
+# Never enter AP mode after that — a temporary outage should not trigger onboarding.
 for _ in $(seq 1 "${WAIT_SECONDS}"); do
   if is_wifi_connected; then
-    systemctl stop photo-frame-setup-portal.service >/dev/null 2>&1 || true
-    systemctl stop photo-frame-setup-mode.service >/dev/null 2>&1 || true
     exit 0
   fi
   sleep 1
