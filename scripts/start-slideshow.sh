@@ -29,25 +29,17 @@ EOF
 # Auto-start a recursive randomized slideshow on Kodi launch.
 cat > /root/.kodi/userdata/autoexec.py <<'EOF'
 import os
-import time
 import xbmc
 
 PHOTO_DIR = '/srv/photos'
 
-def start_slideshow(attempt):
-  if not os.path.isdir(PHOTO_DIR):
-    xbmc.log(f'photo-frame: {PHOTO_DIR} missing; slideshow not started', xbmc.LOGERROR)
-    return
-  xbmc.log(f'photo-frame: slideshow start attempt {attempt}', xbmc.LOGINFO)
+if not os.path.isdir(PHOTO_DIR):
+  xbmc.log(f'photo-frame: {PHOTO_DIR} missing; slideshow not started', xbmc.LOGERROR)
+else:
+  xbmc.log('photo-frame: slideshow start attempt 1', xbmc.LOGINFO)
   xbmc.executebuiltin(f'ActivateWindow(Pictures,{PHOTO_DIR},return)')
   xbmc.sleep(700)
   xbmc.executebuiltin(f'SlideShow({PHOTO_DIR},recursive,random)')
-
-# Kodi can ignore slideshow commands very early in startup.
-# Retry for a short window so we don't get stuck on the empty library screen.
-for i in range(1, 31):
-  start_slideshow(i)
-  time.sleep(1)
 EOF
 
 export PHOTO_FRAME_SLIDE_SECONDS="${SLIDE_SECONDS}"
@@ -81,8 +73,8 @@ if command -v kodi-send >/dev/null 2>&1; then
       fi
       kodi-send --action="SetGUISetting(slideshow.staytime,${SLIDE_SECONDS})" >/dev/null 2>&1 || true
 
-      # Retry slideshow start less aggressively to avoid constant restarts.
-      if [[ "${i}" -eq 1 || $(( i % 5 )) -eq 0 ]]; then
+      # Start slideshow once during startup to avoid visual resets.
+      if [[ "${i}" -eq 1 ]]; then
         # Dismiss any first-run dialogs (e.g. addon prompts) before navigating.
         kodi-send --action="Back" >/dev/null 2>&1 || true
         sleep 1
