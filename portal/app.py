@@ -43,17 +43,33 @@ def save():
 
     def run_connect():
         import time; time.sleep(3)  # Allow response to be delivered before AP goes down
+        print(f"photo-frame portal: starting connect_wifi for ssid={ssid!r}", flush=True)
         proc = subprocess.run(
             ["/opt/photo-frame/scripts/connect_wifi.sh", ssid, password, country],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
         )
+        print(
+            f"photo-frame portal: connect_wifi exited rc={proc.returncode}; output:\n{proc.stdout}",
+            flush=True,
+        )
 
         if proc.returncode == 0:
-            subprocess.Popen(["bash", "-lc", "sleep 2 && systemctl reboot"])
+            time.sleep(1)
+            reboot_proc = subprocess.run(
+                ["systemctl", "reboot"],
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+            print(
+                f"photo-frame portal: reboot command exited rc={reboot_proc.returncode}; output:\n{reboot_proc.stdout}",
+                flush=True,
+            )
 
-    thread = threading.Thread(target=run_connect, daemon=True)
+    thread = threading.Thread(target=run_connect, daemon=False)
     thread.start()
 
     return render_template(

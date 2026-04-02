@@ -58,18 +58,18 @@ choose_smb_mode() {
     "")
       ;;
     *)
-      echo "Invalid SMB_ACCESS_MODE='${selected}'. Use 'anonymous' or 'credentials'."
+      echo "Invalid SMB_ACCESS_MODE='${selected}'. Use 'anonymous' or 'credentials'." >&2
       exit 1
       ;;
   esac
 
-  if [[ -t 0 ]]; then
-    echo
-    echo "Choose SMB share access mode:"
-    echo "  1) credentials (recommended)"
-    echo "  2) anonymous"
-    printf "Enter choice [1/2, default 1]: "
-    read -r smb_choice
+  if [[ -t 0 ]] && [[ -r /dev/tty ]] && [[ -w /dev/tty ]]; then
+    echo >&2
+    echo "Choose SMB share access mode:" >&2
+    echo "  1) credentials (recommended)" >&2
+    echo "  2) anonymous" >&2
+    printf "Enter choice [1/2, default 1]: " > /dev/tty
+    read -r smb_choice < /dev/tty
     case "${smb_choice}" in
       2)
         printf '%s' "anonymous"
@@ -84,6 +84,21 @@ choose_smb_mode() {
 }
 
 SMB_MODE="$(choose_smb_mode)"
+
+# Ask whether to run a full system upgrade before installing packages.
+RUN_UPGRADE="no"
+if [[ -n "${PHOTO_FRAME_UPGRADE:-}" ]]; then
+  case "${PHOTO_FRAME_UPGRADE,,}" in
+    yes|1|true) RUN_UPGRADE="yes" ;;
+  esac
+elif [[ -t 0 ]]; then
+  echo
+  printf "Run full apt upgrade before installing? [y/N]: "
+  read -r upgrade_choice
+  if [[ "${upgrade_choice,,}" == "y" || "${upgrade_choice,,}" == "yes" ]]; then
+    RUN_UPGRADE="yes"
+  fi
+fi
 
 echo "Using target user: ${TARGET_USER}"
 echo "SMB mode: ${SMB_MODE}"
@@ -242,17 +257,34 @@ EOF
 
 echo "Installing packages..."
 apt update
+if [[ "${RUN_UPGRADE}" == "yes" ]]; then
+  echo "Running full apt upgrade..."
+  apt upgrade -y
+fi
 apt install -y \
   xserver-xorg \
   xinit \
-  feh \
+  kodi \
+  kodi-eventclients-kodi-send \
+  sqlite3 \
   samba \
   avahi-daemon \
   hostapd \
   dnsmasq \
+  dhcpcd \
   python3-flask \
   iw \
   rfkill
+
+# Kodi on armhf Bookworm looks for addons under /usr/lib/arm-linux-gnueabihf/kodi/addons
+# but the package installs them to /usr/share/kodi/addons, causing startup errors.
+# Create the symlink so Kodi can find its built-in addons.
+echo "Fixing Kodi addons path..."
+if [[ -d "/usr/share/kodi/addons" ]]; then
+  KODI_LIB_DIR="/usr/lib/arm-linux-gnueabihf/kodi"
+  mkdir -p "${KODI_LIB_DIR}"
+  ln -sfn /usr/share/kodi/addons "${KODI_LIB_DIR}/addons"
+fi
 
 echo "Preparing directories..."
 mkdir -p /srv/photos
@@ -283,6 +315,12 @@ systemctl unmask dnsmasq >/dev/null 2>&1 || true
 
 systemctl disable hostapd >/dev/null 2>&1 || true
 systemctl disable dnsmasq >/dev/null 2>&1 || true
+
+# Use the wlan0-specific wpa_supplicant unit consistently.
+systemctl disable wpa_supplicant.service >/dev/null 2>&1 || true
+systemctl stop wpa_supplicant.service >/dev/null 2>&1 || true
+systemctl unmask wpa_supplicant@wlan0.service >/dev/null 2>&1 || true
+systemctl enable wpa_supplicant@wlan0.service >/dev/null 2>&1 || true
 
 
 echo "Installing systemd services..."
@@ -361,6 +399,25 @@ else
 # END PHOTO-FRAME SHARE
 EOF
 fi
+
+if grep -q "BEGIN PHOTO-FRAME HOMES" /etc/samba/smb.conf; then
+  awk '
+    /# BEGIN PHOTO-FRAME HOMES/ {skip=1; next}
+    /# END PHOTO-FRAME HOMES/ {skip=0; next}
+    !skip {print}
+  ' /etc/samba/smb.conf > /tmp/smb.conf.photo-frame.tmp
+  cp /tmp/smb.conf.photo-frame.tmp /etc/samba/smb.conf
+  rm -f /tmp/smb.conf.photo-frame.tmp
+fi
+
+cat >> /etc/samba/smb.conf <<EOF
+
+# BEGIN PHOTO-FRAME HOMES
+[homes]
+   browseable = no
+   available = no
+# END PHOTO-FRAME HOMES
+EOF
 
 systemctl enable smbd
 systemctl restart smbd
