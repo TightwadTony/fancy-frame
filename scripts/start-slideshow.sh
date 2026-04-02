@@ -36,6 +36,7 @@ PHOTO_DIR = '/srv/photos'
 if not os.path.isdir(PHOTO_DIR):
   xbmc.log(f'photo-frame: {PHOTO_DIR} missing; slideshow not started', xbmc.LOGERROR)
 else:
+  xbmc.sleep(2000)
   xbmc.log('photo-frame: slideshow start attempt 1', xbmc.LOGINFO)
   xbmc.executebuiltin(f'ActivateWindow(Pictures,{PHOTO_DIR},return)')
   xbmc.sleep(700)
@@ -73,8 +74,8 @@ if command -v kodi-send >/dev/null 2>&1; then
       fi
       kodi-send --action="SetGUISetting(slideshow.staytime,${SLIDE_SECONDS})" >/dev/null 2>&1 || true
 
-      # Start slideshow once during startup to avoid visual resets.
-      if [[ "${i}" -eq 1 ]]; then
+      # Start slideshow at launch and one delayed retry to avoid startup misses.
+      if [[ "${i}" -eq 1 || "${i}" -eq 6 ]]; then
         # Dismiss any first-run dialogs (e.g. addon prompts) before navigating.
         kodi-send --action="Back" >/dev/null 2>&1 || true
         sleep 1
