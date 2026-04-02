@@ -6,6 +6,7 @@ xset -dpms
 xset s noblank
 
 sleep 2
+sleep 5
 
 SLIDE_SECONDS="${PHOTO_FRAME_SLIDE_SECONDS:-25}"
 REFRESH_SECONDS="${PHOTO_FRAME_REFRESH_SECONDS:-300}"
