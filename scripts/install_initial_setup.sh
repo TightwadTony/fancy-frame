@@ -264,8 +264,8 @@ fi
 apt install -y \
   xserver-xorg \
   xinit \
-  kodi \
-  kodi-eventclients-kodi-send \
+  python3-pygame \
+  python3-pil \
   imagemagick \
   sqlite3 \
   samba \
@@ -276,16 +276,6 @@ apt install -y \
   python3-flask \
   iw \
   rfkill
-
-# Kodi on armhf Bookworm looks for addons under /usr/lib/arm-linux-gnueabihf/kodi/addons
-# but the package installs them to /usr/share/kodi/addons, causing startup errors.
-# Create the symlink so Kodi can find its built-in addons.
-echo "Fixing Kodi addons path..."
-if [[ -d "/usr/share/kodi/addons" ]]; then
-  KODI_LIB_DIR="/usr/lib/arm-linux-gnueabihf/kodi"
-  mkdir -p "${KODI_LIB_DIR}"
-  ln -sfn /usr/share/kodi/addons "${KODI_LIB_DIR}/addons"
-fi
 
 echo "Preparing directories..."
 mkdir -p /srv/photos
