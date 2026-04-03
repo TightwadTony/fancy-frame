@@ -421,6 +421,7 @@ def load_config(path: str = CONFIG_FILE) -> types.SimpleNamespace:
         try:
             with open(path, 'w') as f:
                 f.write(_DEFAULT_CONFIG)
+            os.chmod(path, 0o666)
             print(f'slideshow: created default config at {path}', file=sys.stderr)
         except OSError as exc:
             print(f'slideshow: could not write default config: {exc}', file=sys.stderr)
