@@ -110,13 +110,12 @@ def crossfade(
     clock: pygame.time.Clock,
 ) -> bool:
     """Alpha-blend old_surf → new_surf."""
-    tmp = new_surf.copy()
     steps = max(1, int(duration * FPS))
-    for i in range(1, steps + 1):
+    for i in range(steps, 0, -1):
         alpha = int(255 * i / steps)
+        screen.blit(new_surf, (0, 0))
+        old_surf.set_alpha(alpha)
         screen.blit(old_surf, (0, 0))
-        tmp.set_alpha(alpha)
-        screen.blit(tmp, (0, 0))
         pygame.display.flip()
         if not _pump(clock):
             return False
@@ -146,13 +145,13 @@ def fade_to_black(
         if not _pump(clock):
             return False
 
-    # Fade in
-    tmp = new_surf.copy()
-    for i in range(1, steps + 1):
+    # Fade in: draw new image opaque, overlay black with decreasing alpha
+    # (mirrors the fade-out pattern so SDL can use its solid-color fast path)
+    for i in range(steps, 0, -1):
         alpha = int(255 * i / steps)
+        screen.blit(new_surf, (0, 0))
+        black.set_alpha(alpha)
         screen.blit(black, (0, 0))
-        tmp.set_alpha(alpha)
-        screen.blit(tmp, (0, 0))
         pygame.display.flip()
         if not _pump(clock):
             return False
