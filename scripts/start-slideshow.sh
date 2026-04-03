@@ -5,6 +5,9 @@ xset s off
 xset -dpms
 xset s noblank
 
+# Prefer 1920x1080 so the TV's scaler doesn't distort the image.
+xrandr --output HDMI-1 --mode 1920x1080 2>/dev/null || true
+
 sleep 3
 
 SLIDE_SECONDS="${PHOTO_FRAME_SLIDE_SECONDS:-25}"

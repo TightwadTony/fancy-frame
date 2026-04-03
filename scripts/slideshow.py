@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Photo frame slideshow with smooth crossfade transitions.
+Photo frame slideshow with smooth transitions (crossfade, fade-to-black, wipe).
 
 Reads photos from PHOTO_PLAY_DIR, displays them fullscreen with a crossfade
 between each slide, and refreshes the photo list periodically to pick up
@@ -120,8 +120,22 @@ class Preloader:
             return self._surface
 
 # ---------------------------------------------------------------------------
-# Rendering helpers
+# Transitions
 # ---------------------------------------------------------------------------
+
+BLACK = (0, 0, 0)
+
+
+def _pump(clock: pygame.time.Clock) -> bool:
+    """Tick clock and drain event queue. Returns False if quit requested."""
+    clock.tick(FPS)
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            return False
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+            return False
+    return True
+
 
 def crossfade(
     screen: pygame.Surface,
@@ -130,10 +144,7 @@ def crossfade(
     duration: float,
     clock: pygame.time.Clock,
 ) -> bool:
-    """
-    Blend old_surf → new_surf over `duration` seconds at FPS.
-    Returns False if the user requested quit during the transition.
-    """
+    """Alpha-blend old_surf → new_surf."""
     steps = max(1, int(duration * FPS))
     for i in range(1, steps + 1):
         alpha = int(255 * i / steps)
@@ -142,13 +153,97 @@ def crossfade(
         tmp.set_alpha(alpha)
         screen.blit(tmp, (0, 0))
         pygame.display.flip()
-        clock.tick(FPS)
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                return False
-            if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                return False
+        if not _pump(clock):
+            return False
     return True
+
+
+def fade_to_black(
+    screen: pygame.Surface,
+    old_surf: pygame.Surface,
+    new_surf: pygame.Surface,
+    duration: float,
+    clock: pygame.time.Clock,
+) -> bool:
+    """Fade old image to black, then fade new image in."""
+    half = duration / 2
+    steps = max(1, int(half * FPS))
+    black = pygame.Surface(screen.get_size())
+    black.fill(BLACK)
+
+    # Fade out
+    for i in range(1, steps + 1):
+        alpha = int(255 * i / steps)
+        screen.blit(old_surf, (0, 0))
+        black.set_alpha(alpha)
+        screen.blit(black, (0, 0))
+        pygame.display.flip()
+        if not _pump(clock):
+            return False
+
+    # Fade in
+    for i in range(1, steps + 1):
+        alpha = int(255 * i / steps)
+        screen.blit(black, (0, 0))
+        tmp = new_surf.copy()
+        tmp.set_alpha(alpha)
+        screen.blit(tmp, (0, 0))
+        pygame.display.flip()
+        if not _pump(clock):
+            return False
+
+    return True
+
+
+def wipe(
+    screen: pygame.Surface,
+    old_surf: pygame.Surface,
+    new_surf: pygame.Surface,
+    duration: float,
+    clock: pygame.time.Clock,
+) -> bool:
+    """Hard edge sweeps across the screen revealing the new image."""
+    sw, sh = screen.get_size()
+    steps = max(1, int(duration * FPS))
+    # Pick a random direction each time: left, right, top, bottom
+    direction = random.choice(('left', 'right', 'top', 'bottom'))
+
+    for i in range(1, steps + 1):
+        progress = i / steps
+        screen.blit(old_surf, (0, 0))
+
+        if direction == 'left':
+            w = int(sw * progress)
+            screen.blit(new_surf, (0, 0), (0, 0, w, sh))
+        elif direction == 'right':
+            w = int(sw * progress)
+            x = sw - w
+            screen.blit(new_surf, (x, 0), (x, 0, w, sh))
+        elif direction == 'top':
+            h = int(sh * progress)
+            screen.blit(new_surf, (0, 0), (0, 0, sw, h))
+        else:  # bottom
+            h = int(sh * progress)
+            y = sh - h
+            screen.blit(new_surf, (0, y), (0, y, sw, h))
+
+        pygame.display.flip()
+        if not _pump(clock):
+            return False
+
+    return True
+
+
+def transition(
+    screen: pygame.Surface,
+    old_surf: pygame.Surface,
+    new_surf: pygame.Surface,
+    duration: float,
+    clock: pygame.time.Clock,
+) -> bool:
+    """Pick a random transition and run it."""
+    fn = random.choice((crossfade, fade_to_black, wipe))
+    return fn(screen, old_surf, new_surf, duration, clock)
 
 
 def wait(seconds: float, clock: pygame.time.Clock) -> bool:
@@ -234,8 +329,8 @@ def main() -> None:
             preloader.request(next_path)
             preloaded_path = next_path
 
-        # Crossfade then dwell.
-        if not crossfade(screen, current, next_surf, FADE_SECS, clock):
+        # Transition then dwell.
+        if not transition(screen, current, next_surf, FADE_SECS, clock):
             break
         current = next_surf
 
