@@ -91,6 +91,12 @@ EOF
 
 export PHOTO_FRAME_SLIDE_SECONDS="${SLIDE_SECONDS}"
 
+# Install custom splash screen shown while Kodi loads.
+mkdir -p /root/.kodi/media
+if [[ -f "/opt/photo-frame/assets/splash.jpg" ]]; then
+  cp /opt/photo-frame/assets/splash.jpg /root/.kodi/media/Splash.png
+fi
+
 kodi --standalone --windowing=x11 &
 KODI_PID=$!
 

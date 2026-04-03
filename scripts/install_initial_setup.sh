@@ -298,6 +298,7 @@ cp -a "${PROJECT_ROOT}/scripts" "${INSTALL_ROOT}/"
 cp -a "${PROJECT_ROOT}/portal" "${INSTALL_ROOT}/"
 cp -a "${PROJECT_ROOT}/config" "${INSTALL_ROOT}/"
 cp -a "${PROJECT_ROOT}/systemd" "${INSTALL_ROOT}/"
+[[ -d "${PROJECT_ROOT}/assets" ]] && cp -a "${PROJECT_ROOT}/assets" "${INSTALL_ROOT}/"
 chmod +x "${INSTALL_ROOT}"/scripts/*.sh
 
 
