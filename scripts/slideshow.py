@@ -11,6 +11,7 @@ Environment variables:
   PHOTO_FRAME_REFRESH_SECONDS — how often to rescan photo dir (default 300)
 """
 
+import io
 import os
 import sys
 import random
@@ -65,10 +66,16 @@ def load_surface(path: str, size: tuple[int, int]) -> pygame.Surface | None:
         nw, nh = int(iw * scale), int(ih * scale)
         img = img.resize((nw, nh), Image.LANCZOS)
 
+        # Load into pygame via an in-memory BMP rather than frombuffer to
+        # avoid stride/format mismatches on different Pi display configurations.
+        buf = io.BytesIO()
+        img.save(buf, format='BMP')
+        buf.seek(0)
+        pg_img = pygame.image.load(buf).convert()
+
         surface = pygame.Surface(size)
         surface.fill((0, 0, 0))
-        pg = pygame.image.frombuffer(img.tobytes(), (nw, nh), 'RGB')
-        surface.blit(pg, ((sw - nw) // 2, (sh - nh) // 2))
+        surface.blit(pg_img, ((sw - nw) // 2, (sh - nh) // 2))
         return surface
 
     except Exception as exc:
