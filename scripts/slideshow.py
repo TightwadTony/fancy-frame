@@ -31,7 +31,7 @@ PHOTO_DIR    = '/var/lib/photo-frame/playable-photos'
 SLIDE_SECS   = int(os.environ.get('PHOTO_FRAME_SLIDE_SECONDS',   '25'))
 REFRESH_SECS = int(os.environ.get('PHOTO_FRAME_REFRESH_SECONDS', '300'))
 FADE_SECS    = 1.5
-FPS          = 30
+FPS          = 20     # matches Pi Zero 2W display throughput
 KB_ZOOM_MIN  = 1.02   # minimum zoom
 KB_ZOOM_MAX  = 1.20   # maximum zoom
 
@@ -255,37 +255,51 @@ def transition(
 
 class KenBurns:
     """
-    Pre-scales the image once to a random zoom level, then pans smoothly
-    across it during the dwell. The dwell loop is a pure blit with an
-    offset — no per-frame scaling, which is essential for a Pi Zero 2W.
-
-    Zoom variety comes from each image getting a different random zoom
-    level, which looks identical to intra-image zoom at this motion speed.
+    Animates a slow zoom (zoom_a → zoom_b) combined with a pan across the
+    image. The image is pre-scaled to KB_ZOOM_MAX once; each frame we crop
+    and scale a screen-sized region from it — one transform per frame at
+    ~18fps, which the Pi Zero 2W can sustain smoothly.
     """
 
     def __init__(self, surf: pygame.Surface, screen_size: tuple[int, int]) -> None:
         sw, sh = screen_size
+        self._sw, self._sh = sw, sh
 
-        # Pick one random zoom level for this image and pre-scale once.
-        zoom = random.uniform(KB_ZOOM_MIN, KB_ZOOM_MAX)
-        zw = int(sw * zoom)
-        zh = int(sh * zoom)
-        self._zoomed = pygame.transform.scale(surf, (zw, zh))
+        # Pre-scale to max zoom once so per-frame crops stay within bounds.
+        self._big = pygame.transform.scale(surf, (int(sw * KB_ZOOM_MAX),
+                                                   int(sh * KB_ZOOM_MAX)))
+        bw, bh = self._big.get_size()
 
-        # Random start/end pan offsets within the overflow area.
-        max_ox = max(0, zw - sw)
-        max_oy = max(0, zh - sh)
-        self._ox_a = random.randint(0, max_ox)
-        self._oy_a = random.randint(0, max_oy)
-        self._ox_b = random.randint(0, max_ox)
-        self._oy_b = random.randint(0, max_oy)
+        # Random start/end zoom — occasionally reversed for zoom-out.
+        za = random.uniform(KB_ZOOM_MIN, KB_ZOOM_MAX)
+        zb = random.uniform(KB_ZOOM_MIN, KB_ZOOM_MAX)
+        if random.random() < 0.5:
+            za, zb = zb, za
+
+        # Crop sizes at each end: smaller crop = more zoomed in.
+        self._cwa = int(sw / (za / 1.0))   # crop width at zoom a
+        self._cha = int(sh / (za / 1.0))
+        self._cwb = int(sw / (zb / 1.0))
+        self._chb = int(sh / (zb / 1.0))
+
+        # Random pan: top-left of crop rect, clamped so crop stays in bounds.
+        self._xa = random.randint(0, max(0, bw - self._cwa))
+        self._ya = random.randint(0, max(0, bh - self._cha))
+        self._xb = random.randint(0, max(0, bw - self._cwb))
+        self._yb = random.randint(0, max(0, bh - self._chb))
 
     def blit_at(self, screen: pygame.Surface, t: float) -> None:
-        """Blit the current pan position (smoothstepped t ∈ [0, 1]) to screen."""
+        """Render the zoom+pan at smoothstepped progress t ∈ [0, 1]."""
         e = t * t * (3 - 2 * t)
-        ox = int(self._ox_a + (self._ox_b - self._ox_a) * e)
-        oy = int(self._oy_a + (self._oy_b - self._oy_a) * e)
-        screen.blit(self._zoomed, (-ox, -oy))
+        x  = int(self._xa  + (self._xb  - self._xa)  * e)
+        y  = int(self._ya  + (self._yb  - self._ya)  * e)
+        cw = int(self._cwa + (self._cwb - self._cwa) * e)
+        ch = int(self._cha + (self._chb - self._cha) * e)
+        bw, bh = self._big.get_size()
+        cw = min(cw, bw - x)
+        ch = min(ch, bh - y)
+        crop = self._big.subsurface(pygame.Rect(x, y, cw, ch))
+        pygame.transform.scale(crop, (self._sw, self._sh), screen)
 
 
 def ken_burns_dwell(
