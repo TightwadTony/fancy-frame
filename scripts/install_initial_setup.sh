@@ -266,6 +266,7 @@ apt install -y \
   xinit \
   kodi \
   kodi-eventclients-kodi-send \
+  imagemagick \
   sqlite3 \
   samba \
   avahi-daemon \

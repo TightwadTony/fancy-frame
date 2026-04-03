@@ -10,11 +10,55 @@ sleep 5
 
 SLIDE_SECONDS="${PHOTO_FRAME_SLIDE_SECONDS:-25}"
 REFRESH_SECONDS="${PHOTO_FRAME_REFRESH_SECONDS:-300}"
+PHOTO_SOURCE_DIR="/srv/photos"
+PHOTO_PLAY_DIR="/var/lib/photo-frame/playable-photos"
+
+rebuild_playable_photos() {
+  local source_dir="${PHOTO_SOURCE_DIR}"
+  local play_dir="${PHOTO_PLAY_DIR}"
+  local -i counter=0
+
+  mkdir -p "${play_dir}"
+  find "${play_dir}" -mindepth 1 -delete || true
+
+  while IFS= read -r -d '' file; do
+    local base ext link_name
+    base="$(basename "${file}")"
+
+    # Ignore macOS metadata files and hidden desktop artifacts.
+    if [[ "${base}" == ._* || "${base}" == ".DS_Store" ]]; then
+      continue
+    fi
+
+    ext="${base##*.}"
+    ext="${ext,,}"
+    case "${ext}" in
+      jpg|jpeg|png|gif|bmp|webp|tif|tiff)
+        ;;
+      *)
+        continue
+        ;;
+    esac
+
+    # If ImageMagick is present, skip corrupt/unreadable images too.
+    if command -v identify >/dev/null 2>&1; then
+      if ! identify "${file}" >/dev/null 2>&1; then
+        continue
+      fi
+    fi
+
+    counter+=1
+    printf -v link_name "%08d-%s" "${counter}" "${base}"
+    ln -sf "${file}" "${play_dir}/${link_name}"
+  done < <(find "${source_dir}" -type f -print0)
+}
 
 if ! command -v kodi >/dev/null 2>&1; then
   echo "kodi binary not found"
   exit 1
 fi
+
+rebuild_playable_photos
 
 mkdir -p /root/.kodi/userdata
 
@@ -32,7 +76,7 @@ cat > /root/.kodi/userdata/autoexec.py <<'EOF'
 import os
 import xbmc
 
-PHOTO_DIR = '/srv/photos'
+PHOTO_DIR = '/var/lib/photo-frame/playable-photos'
 
 if not os.path.isdir(PHOTO_DIR):
   xbmc.log(f'photo-frame: {PHOTO_DIR} missing; slideshow not started', xbmc.LOGERROR)
@@ -80,9 +124,9 @@ if command -v kodi-send >/dev/null 2>&1; then
         # Dismiss any first-run dialogs (e.g. addon prompts) before navigating.
         kodi-send --action="Back" >/dev/null 2>&1 || true
         sleep 1
-        kodi-send --action="ActivateWindow(Pictures,/srv/photos,return)" >/dev/null 2>&1 || true
+        kodi-send --action="ActivateWindow(Pictures,${PHOTO_PLAY_DIR},return)" >/dev/null 2>&1 || true
         sleep 1
-        kodi-send --action="SlideShow(/srv/photos,recursive,random)" >/dev/null 2>&1 || true
+        kodi-send --action="SlideShow(${PHOTO_PLAY_DIR},recursive,random)" >/dev/null 2>&1 || true
       fi
 
       sleep 2
@@ -93,10 +137,13 @@ if command -v kodi-send >/dev/null 2>&1; then
       if ! kill -0 "${KODI_PID}" 2>/dev/null; then
         exit 0
       fi
+
+      rebuild_playable_photos
+
       kodi-send --action="SetGUISetting(slideshow.staytime,${SLIDE_SECONDS})" >/dev/null 2>&1 || true
-      kodi-send --action="ActivateWindow(Pictures,/srv/photos,return)" >/dev/null 2>&1 || true
+      kodi-send --action="ActivateWindow(Pictures,${PHOTO_PLAY_DIR},return)" >/dev/null 2>&1 || true
       sleep 1
-      kodi-send --action="SlideShow(/srv/photos,recursive,random)" >/dev/null 2>&1 || true
+      kodi-send --action="SlideShow(${PHOTO_PLAY_DIR},recursive,random)" >/dev/null 2>&1 || true
     done
   ) &
   REFRESH_PID=$!
