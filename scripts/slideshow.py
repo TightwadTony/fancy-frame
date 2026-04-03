@@ -18,7 +18,7 @@ import time
 import threading
 
 import pygame
-from PIL import Image
+from PIL import Image, ImageOps
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -56,6 +56,7 @@ def load_surface(path: str, size: tuple[int, int]) -> pygame.Surface | None:
     """
     try:
         img = Image.open(path)
+        img = ImageOps.exif_transpose(img)
         img = img.convert('RGB')
 
         sw, sh = size
