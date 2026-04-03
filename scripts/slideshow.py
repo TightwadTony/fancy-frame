@@ -143,12 +143,12 @@ def _pump(clock: pygame.time.Clock) -> bool:
 def crossfade(
     screen: pygame.Surface,
     old_surf: pygame.Surface,
-    new_kb: KenBurns,
+    new_surf: pygame.Surface,
     duration: float,
     clock: pygame.time.Clock,
 ) -> bool:
-    """Alpha-blend old_surf → new image at its Ken Burns t=0 frame."""
-    new_frame = new_kb.frame_at(0)
+    """Alpha-blend old_surf → new_surf."""
+    new_frame = new_surf
     steps = max(1, int(duration * FPS))
     for i in range(1, steps + 1):
         alpha = int(255 * i / steps)
@@ -165,12 +165,12 @@ def crossfade(
 def fade_to_black(
     screen: pygame.Surface,
     old_surf: pygame.Surface,
-    new_kb: KenBurns,
+    new_surf: pygame.Surface,
     duration: float,
     clock: pygame.time.Clock,
 ) -> bool:
-    """Fade old image to black, then fade new image in at Ken Burns t=0."""
-    new_frame = new_kb.frame_at(0)
+    """Fade old image to black, then fade new image in."""
+    new_frame = new_surf
     half = duration / 2
     steps = max(1, int(half * FPS))
     black = pygame.Surface(screen.get_size())
@@ -203,13 +203,13 @@ def fade_to_black(
 def wipe(
     screen: pygame.Surface,
     old_surf: pygame.Surface,
-    new_kb: KenBurns,
+    new_surf: pygame.Surface,
     duration: float,
     clock: pygame.time.Clock,
 ) -> bool:
-    """Hard edge sweeps across revealing the new image at Ken Burns t=0."""
+    """Hard edge sweeps across revealing the new image."""
     sw, sh = screen.get_size()
-    new_frame = new_kb.frame_at(0)
+    new_frame = new_surf
     steps = max(1, int(duration * FPS))
     direction = random.choice(('left', 'right', 'top', 'bottom'))
 
@@ -246,61 +246,46 @@ def transition(
     duration: float,
     clock: pygame.time.Clock,
 ) -> bool:
-    """Pick a random transition and run it."""
+    """Capture the Ken Burns t=0 frame then run a random transition into it."""
+    new_frame = pygame.Surface(screen.get_size())
+    new_kb.blit_at(new_frame, 0.0)
     fn = random.choice((crossfade, fade_to_black, wipe))
-    return fn(screen, old_surf, new_kb, duration, clock)
+    return fn(screen, old_surf, new_frame, duration, clock)
 
 
 class KenBurns:
     """
-    Pre-bakes a zoomed surface at load time so the dwell loop is pure blit —
-    no per-frame scaling, which is too slow for a Pi Zero 2W.
+    Pre-scales the image once to a random zoom level, then pans smoothly
+    across it during the dwell. The dwell loop is a pure blit with an
+    offset — no per-frame scaling, which is essential for a Pi Zero 2W.
 
-    The image is scaled up to KB_ZOOM_MAX once; each frame we blit a
-    screen-sized rect from a slowly moving position within it.
+    Zoom variety comes from each image getting a different random zoom
+    level, which looks identical to intra-image zoom at this motion speed.
     """
 
     def __init__(self, surf: pygame.Surface, screen_size: tuple[int, int]) -> None:
         sw, sh = screen_size
-        self._sw, self._sh = sw, sh
 
-        # Pre-scale to the maximum zoom level once.
-        big_w = int(sw * KB_ZOOM_MAX)
-        big_h = int(sh * KB_ZOOM_MAX)
-        self._big = pygame.transform.scale(surf, (big_w, big_h))
+        # Pick one random zoom level for this image and pre-scale once.
+        zoom = random.uniform(KB_ZOOM_MIN, KB_ZOOM_MAX)
+        zw = int(sw * zoom)
+        zh = int(sh * zoom)
+        self._zoomed = pygame.transform.scale(surf, (zw, zh))
 
-        # Random start/end zoom expressed as fraction of the big surface.
-        za = random.uniform(KB_ZOOM_MIN, KB_ZOOM_MAX)
-        zb = random.uniform(KB_ZOOM_MIN, KB_ZOOM_MAX)
-        if random.random() < 0.5:
-            za, zb = zb, za  # occasionally zoom out
+        # Random start/end pan offsets within the overflow area.
+        max_ox = max(0, zw - sw)
+        max_oy = max(0, zh - sh)
+        self._ox_a = random.randint(0, max_ox)
+        self._oy_a = random.randint(0, max_oy)
+        self._ox_b = random.randint(0, max_ox)
+        self._oy_b = random.randint(0, max_oy)
 
-        # Convert zoom levels to crop-rect sizes within the big surface.
-        self._wa = int(sw * sw / (big_w / za))  # width of crop at zoom a
-        self._ha = int(sh * sh / (big_h / za))
-        self._wb = int(sw * sw / (big_w / zb))
-        self._hb = int(sh * sh / (big_h / zb))
-
-        # Random pan: top-left corner of the crop rect, clamped to big surface.
-        self._xa = random.randint(0, max(0, big_w - self._wa))
-        self._ya = random.randint(0, max(0, big_h - self._ha))
-        self._xb = random.randint(0, max(0, big_w - self._wb))
-        self._yb = random.randint(0, max(0, big_h - self._hb))
-
-    def frame_at(self, t: float) -> pygame.Surface:
-        """Return a screen-sized surface for eased progress t ∈ [0, 1]."""
-        # Smoothstep easing.
+    def blit_at(self, screen: pygame.Surface, t: float) -> None:
+        """Blit the current pan position (smoothstepped t ∈ [0, 1]) to screen."""
         e = t * t * (3 - 2 * t)
-        x = int(self._xa + (self._xb - self._xa) * e)
-        y = int(self._ya + (self._yb - self._ya) * e)
-        w = int(self._wa + (self._wb - self._wa) * e)
-        h = int(self._ha + (self._hb - self._ha) * e)
-        # Crop from the big surface then scale to screen size.
-        crop = self._big.subsurface(
-            pygame.Rect(x, y, min(w, self._big.get_width() - x),
-                               min(h, self._big.get_height() - y))
-        )
-        return pygame.transform.scale(crop, (self._sw, self._sh))
+        ox = int(self._ox_a + (self._ox_b - self._ox_a) * e)
+        oy = int(self._oy_a + (self._oy_b - self._oy_a) * e)
+        screen.blit(self._zoomed, (-ox, -oy))
 
 
 def ken_burns_dwell(
@@ -309,7 +294,7 @@ def ken_burns_dwell(
     seconds: float,
     clock: pygame.time.Clock,
 ) -> bool:
-    """Animate a KenBurns instance for `seconds`."""
+    """Pan the pre-scaled KenBurns surface across the screen for `seconds`."""
     start = time.monotonic()
     end   = start + seconds
     while True:
@@ -317,7 +302,7 @@ def ken_burns_dwell(
         if now >= end:
             break
         t = min(1.0, (now - start) / seconds)
-        screen.blit(kb.frame_at(t), (0, 0))
+        kb.blit_at(screen, t)
         pygame.display.flip()
         clock.tick(FPS)
         for event in pygame.event.get():
@@ -409,17 +394,17 @@ def main() -> None:
         # it at t=0 so there's no snap when the dwell starts.
         next_kb = KenBurns(next_surf, size)
 
-        # Transition (renders new image at Ken Burns t=0) then dwell.
+        # Transition into the new image, then Ken Burns dwell.
         if not transition(screen, current, next_kb, FADE_SECS, clock):
             break
-        current = next_kb.frame_at(0)
 
         dwell = max(0.0, SLIDE_SECS - FADE_SECS)
         if not ken_burns_dwell(screen, next_kb, dwell, clock):
             break
 
-        # Capture the last Ken Burns frame as the base for the next transition.
-        current = next_kb.frame_at(1.0)
+        # Capture the final pan position as the base for the next transition.
+        current = pygame.Surface(size)
+        next_kb.blit_at(current, 1.0)
 
     pygame.quit()
 
