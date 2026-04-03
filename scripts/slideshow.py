@@ -2,13 +2,13 @@
 """
 Photo frame slideshow with smooth transitions (crossfade, fade-to-black, wipe).
 
-Reads photos from PHOTO_PLAY_DIR, displays them fullscreen with a crossfade
+Reads photos from PHOTO_DIR, displays them fullscreen with a random transition
 between each slide, and refreshes the photo list periodically to pick up
 newly added images.
 
-Environment variables:
-  PHOTO_FRAME_SLIDE_SECONDS   — seconds each photo is displayed (default 25)
-  PHOTO_FRAME_REFRESH_SECONDS — how often to rescan photo dir (default 300)
+Settings are read from CONFIG_FILE at startup and re-checked every
+CONFIG_CHECK_SECS seconds; the slideshow exits (systemd restarts it) if the
+file changes so the new settings take effect cleanly.
 """
 
 from __future__ import annotations
@@ -19,21 +19,20 @@ import sys
 import random
 import time
 import threading
+import types
 
 import pygame
 from PIL import Image, ImageOps
 
 # ---------------------------------------------------------------------------
-# Configuration
+# Fixed constants
 # ---------------------------------------------------------------------------
 
-PHOTO_DIR    = '/var/lib/photo-frame/playable-photos'
-SLIDE_SECS   = int(os.environ.get('PHOTO_FRAME_SLIDE_SECONDS',   '25'))
-REFRESH_SECS = int(os.environ.get('PHOTO_FRAME_REFRESH_SECONDS', '300'))
-FADE_SECS    = 1.5
-FPS          = 20     # matches Pi Zero 2W display throughput
-KB_ZOOM_MIN  = 1.02   # minimum zoom
-KB_ZOOM_MAX  = 1.20   # maximum zoom
+PHOTO_DIR         = '/var/lib/photo-frame/playable-photos'
+CONFIG_FILE       = '/srv/photos/photo-frame.conf'
+CONFIG_CHECK_SECS = 300   # re-read config every 5 minutes
+REFRESH_SECS      = int(os.environ.get('PHOTO_FRAME_REFRESH_SECONDS', '300'))
+FPS               = 20    # matches Pi Zero 2W display throughput
 
 IMAGE_EXTS = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tif', '.tiff'}
 
@@ -86,43 +85,6 @@ def load_surface(path: str, size: tuple[int, int]) -> pygame.Surface | None:
         return None
 
 # ---------------------------------------------------------------------------
-# Background preloader
-# ---------------------------------------------------------------------------
-
-class Preloader:
-    """
-    Loads the next image on a background thread so the crossfade can start
-    immediately without blocking on disk I/O or Pillow decode time.
-    """
-
-    def __init__(self, size: tuple[int, int]) -> None:
-        self._size    = size
-        self._path:    str | None           = None
-        self._surface: pygame.Surface | None = None
-        self._thread:  threading.Thread | None = None
-        self._lock    = threading.Lock()
-
-    def request(self, path: str) -> None:
-        with self._lock:
-            self._path    = path
-            self._surface = None
-        t = threading.Thread(target=self._load, args=(path,), daemon=True)
-        t.start()
-        self._thread = t
-
-    def _load(self, path: str) -> None:
-        surface = load_surface(path, self._size)
-        with self._lock:
-            if self._path == path:
-                self._surface = surface
-
-    def get(self, timeout: float = 10.0) -> pygame.Surface | None:
-        if self._thread:
-            self._thread.join(timeout)
-        with self._lock:
-            return self._surface
-
-# ---------------------------------------------------------------------------
 # Transitions
 # ---------------------------------------------------------------------------
 
@@ -169,7 +131,6 @@ def fade_to_black(
     clock: pygame.time.Clock,
 ) -> bool:
     """Fade old image to black, then fade new image in."""
-    new_frame = new_surf
     half = duration / 2
     steps = max(1, int(half * FPS))
     black = pygame.Surface(screen.get_size())
@@ -186,7 +147,7 @@ def fade_to_black(
             return False
 
     # Fade in
-    tmp = new_frame.copy()
+    tmp = new_surf.copy()
     for i in range(1, steps + 1):
         alpha = int(255 * i / steps)
         screen.blit(black, (0, 0))
@@ -208,7 +169,6 @@ def wipe(
 ) -> bool:
     """Hard edge sweeps across revealing the new image."""
     sw, sh = screen.get_size()
-    new_frame = new_surf
     steps = max(1, int(duration * FPS))
     direction = random.choice(('left', 'right', 'top', 'bottom'))
 
@@ -218,18 +178,18 @@ def wipe(
 
         if direction == 'left':
             w = int(sw * progress)
-            screen.blit(new_frame, (0, 0), (0, 0, w, sh))
+            screen.blit(new_surf, (0, 0), (0, 0, w, sh))
         elif direction == 'right':
             w = int(sw * progress)
             x = sw - w
-            screen.blit(new_frame, (x, 0), (x, 0, w, sh))
+            screen.blit(new_surf, (x, 0), (x, 0, w, sh))
         elif direction == 'top':
             h = int(sh * progress)
-            screen.blit(new_frame, (0, 0), (0, 0, sw, h))
+            screen.blit(new_surf, (0, 0), (0, 0, sw, h))
         else:  # bottom
             h = int(sh * progress)
             y = sh - h
-            screen.blit(new_frame, (0, y), (0, y, sw, h))
+            screen.blit(new_surf, (0, y), (0, y, sw, h))
 
         pygame.display.flip()
         if not _pump(clock):
@@ -238,48 +198,67 @@ def wipe(
     return True
 
 
+# Maps config name → function, used by load_config().
+TRANSITION_FNS: dict[str, object] = {
+    'crossfade':     crossfade,
+    'fade_to_black': fade_to_black,
+    'wipe':          wipe,
+}
+
+
 def transition(
     screen: pygame.Surface,
     old_surf: pygame.Surface,
     new_kb: KenBurns,
     duration: float,
     clock: pygame.time.Clock,
+    fns: list | None = None,
 ) -> bool:
     """Capture the Ken Burns t=0 frame then run a random transition into it."""
     new_frame = pygame.Surface(screen.get_size())
     new_kb.blit_at(new_frame, 0.0)
-    fn = random.choice((crossfade, fade_to_black, wipe))
+    pool = fns if fns else list(TRANSITION_FNS.values())
+    fn = random.choice(pool)
     return fn(screen, old_surf, new_frame, duration, clock)
 
+# ---------------------------------------------------------------------------
+# Ken Burns effect
+# ---------------------------------------------------------------------------
 
 class KenBurns:
     """
     Animates a slow zoom (zoom_a → zoom_b) combined with a pan across the
-    image. The image is pre-scaled to KB_ZOOM_MAX once; each frame we crop
+    image. The image is pre-scaled to zoom_max once; each frame we crop
     and scale a screen-sized region from it — one transform per frame at
     ~18fps, which the Pi Zero 2W can sustain smoothly.
     """
 
-    def __init__(self, surf: pygame.Surface, screen_size: tuple[int, int]) -> None:
+    def __init__(
+        self,
+        surf: pygame.Surface,
+        screen_size: tuple[int, int],
+        zoom_min: float = 1.02,
+        zoom_max: float = 1.20,
+    ) -> None:
         sw, sh = screen_size
         self._sw, self._sh = sw, sh
 
         # Pre-scale to max zoom once so per-frame crops stay within bounds.
-        self._big = pygame.transform.scale(surf, (int(sw * KB_ZOOM_MAX),
-                                                   int(sh * KB_ZOOM_MAX)))
+        self._big = pygame.transform.scale(surf, (int(sw * zoom_max),
+                                                   int(sh * zoom_max)))
         bw, bh = self._big.get_size()
 
         # Random start/end zoom — occasionally reversed for zoom-out.
-        za = random.uniform(KB_ZOOM_MIN, KB_ZOOM_MAX)
-        zb = random.uniform(KB_ZOOM_MIN, KB_ZOOM_MAX)
+        za = random.uniform(zoom_min, zoom_max)
+        zb = random.uniform(zoom_min, zoom_max)
         if random.random() < 0.5:
             za, zb = zb, za
 
         # Crop sizes at each end: smaller crop = more zoomed in.
-        self._cwa = int(sw / (za / 1.0))   # crop width at zoom a
-        self._cha = int(sh / (za / 1.0))
-        self._cwb = int(sw / (zb / 1.0))
-        self._chb = int(sh / (zb / 1.0))
+        self._cwa = int(sw / za)
+        self._cha = int(sh / za)
+        self._cwb = int(sw / zb)
+        self._chb = int(sh / zb)
 
         # Random pan: top-left of crop rect, clamped so crop stays in bounds.
         self._xa = random.randint(0, max(0, bw - self._cwa))
@@ -307,7 +286,7 @@ def ken_burns_dwell(
     seconds: float,
     clock: pygame.time.Clock,
 ) -> bool:
-    """Pan the pre-scaled KenBurns surface across the screen for `seconds`."""
+    """Pan/zoom the KenBurns surface across the screen for `seconds`."""
     start = time.monotonic()
     end   = start + seconds
     while True:
@@ -327,9 +306,7 @@ def ken_burns_dwell(
 
 
 def wait(seconds: float, clock: pygame.time.Clock) -> bool:
-    """
-    Idle for `seconds`, processing events. Returns False if quit requested.
-    """
+    """Idle for `seconds`, processing events. Returns False if quit requested."""
     end = time.monotonic() + seconds
     while time.monotonic() < end:
         for event in pygame.event.get():
@@ -341,10 +318,146 @@ def wait(seconds: float, clock: pygame.time.Clock) -> bool:
     return True
 
 # ---------------------------------------------------------------------------
+# Background preloader
+# ---------------------------------------------------------------------------
+
+class Preloader:
+    """
+    Loads the next image and pre-builds its KenBurns object on a background
+    thread so the transition can start immediately without stalling on disk I/O,
+    Pillow decode, or the pygame.transform.scale in KenBurns.__init__.
+    """
+
+    def __init__(self, size: tuple[int, int]) -> None:
+        self._size     = size
+        self._path:     str | None              = None
+        self._surface:  pygame.Surface | None   = None
+        self._kenburns: KenBurns | None         = None
+        self._thread:   threading.Thread | None = None
+        self._lock     = threading.Lock()
+
+    def request(self, path: str, zoom_min: float = 1.02, zoom_max: float = 1.20) -> None:
+        with self._lock:
+            self._path     = path
+            self._surface  = None
+            self._kenburns = None
+        t = threading.Thread(target=self._load, args=(path, zoom_min, zoom_max), daemon=True)
+        t.start()
+        self._thread = t
+
+    def _load(self, path: str, zoom_min: float, zoom_max: float) -> None:
+        surface = load_surface(path, self._size)
+        kenburns = KenBurns(surface, self._size, zoom_min, zoom_max) if surface is not None else None
+        with self._lock:
+            if self._path == path:
+                self._surface  = surface
+                self._kenburns = kenburns
+
+    def get(self, timeout: float = 10.0) -> tuple[pygame.Surface | None, KenBurns | None]:
+        if self._thread:
+            self._thread.join(timeout)
+        with self._lock:
+            return self._surface, self._kenburns
+
+# ---------------------------------------------------------------------------
+# Config file
+# ---------------------------------------------------------------------------
+
+_DEFAULT_CONFIG = """\
+# Photo Frame Configuration
+# Edit this file to change slideshow behaviour.
+# Changes take effect within 5 minutes (the slideshow restarts automatically).
+
+# Seconds each photo is displayed (including the transition)
+slide_seconds = 25
+
+# Transition duration in seconds
+fade_seconds = 1.5
+
+# Which transitions to use (comma-separated).
+# Options: crossfade, fade_to_black, wipe
+transitions = crossfade, fade_to_black, wipe
+
+# Ken Burns zoom and pan effect (yes / no)
+ken_burns = yes
+
+# Zoom range for Ken Burns (1.0 = no zoom, 1.20 = 20% zoom out from centre)
+ken_burns_zoom_min = 1.02
+ken_burns_zoom_max = 1.20
+"""
+
+_CONFIG_DEFAULTS = {
+    'slide_seconds':      '25',
+    'fade_seconds':       '1.5',
+    'transitions':        'crossfade, fade_to_black, wipe',
+    'ken_burns':          'yes',
+    'ken_burns_zoom_min': '1.02',
+    'ken_burns_zoom_max': '1.20',
+}
+
+
+def _parse_config_file(path: str) -> dict[str, str]:
+    result: dict[str, str] = {}
+    try:
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                if '=' in line:
+                    key, _, val = line.partition('=')
+                    result[key.strip()] = val.strip()
+    except OSError:
+        pass
+    return result
+
+
+def load_config(path: str = CONFIG_FILE) -> types.SimpleNamespace:
+    """
+    Read the config file and return a SimpleNamespace of typed settings.
+    Creates a default config file if none exists.
+    """
+    if not os.path.exists(path):
+        try:
+            with open(path, 'w') as f:
+                f.write(_DEFAULT_CONFIG)
+            print(f'slideshow: created default config at {path}', file=sys.stderr)
+        except OSError as exc:
+            print(f'slideshow: could not write default config: {exc}', file=sys.stderr)
+
+    raw = {**_CONFIG_DEFAULTS, **_parse_config_file(path)}
+
+    # Parse transition function list
+    names = [n.strip() for n in raw['transitions'].split(',')]
+    fns = [TRANSITION_FNS[n] for n in names if n in TRANSITION_FNS]
+    if not fns:
+        fns = list(TRANSITION_FNS.values())
+
+    return types.SimpleNamespace(
+        slide_secs = float(raw['slide_seconds']),
+        fade_secs  = float(raw['fade_seconds']),
+        fns        = fns,
+        ken_burns  = raw['ken_burns'].strip().lower() in ('yes', '1', 'true'),
+        zoom_min   = float(raw['ken_burns_zoom_min']),
+        zoom_max   = float(raw['ken_burns_zoom_max']),
+    )
+
+
+def _config_mtime(path: str) -> float:
+    try:
+        return os.path.getmtime(path)
+    except OSError:
+        return 0.0
+
+# ---------------------------------------------------------------------------
 # Main loop
 # ---------------------------------------------------------------------------
 
 def main() -> None:
+    cfg = load_config()
+    config_mtime      = _config_mtime(CONFIG_FILE)
+    last_config_check = time.monotonic()
+
     pygame.init()
     pygame.mouse.set_visible(False)
 
@@ -359,15 +472,25 @@ def main() -> None:
     current: pygame.Surface = pygame.Surface(size)
     current.fill((0, 0, 0))
 
-    photos:       list[str] = []
-    idx:          int       = 0
-    last_refresh: float     = 0.0
-    preloader   = Preloader(size)
+    photos:         list[str]  = []
+    idx:            int        = 0
+    last_refresh:   float      = 0.0
+    preloader      = Preloader(size)
     preloaded_path: str | None = None
 
     while True:
-        # Refresh photo list periodically.
         now = time.monotonic()
+
+        # Check for config file changes every CONFIG_CHECK_SECS seconds.
+        if now - last_config_check >= CONFIG_CHECK_SECS:
+            last_config_check = now
+            mtime = _config_mtime(CONFIG_FILE)
+            if mtime != config_mtime:
+                print('slideshow: config changed, restarting…', file=sys.stderr)
+                pygame.quit()
+                sys.exit(0)
+
+        # Refresh photo list periodically.
         if now - last_refresh >= REFRESH_SECS or not photos:
             fresh = list_photos(PHOTO_DIR)
             if fresh and fresh != photos:
@@ -388,38 +511,59 @@ def main() -> None:
             random.shuffle(photos)
             idx = 0
 
-        # Use the preloaded surface when it matches, otherwise load inline.
+        # Use the preloaded surface+KenBurns when available, otherwise load inline.
         if path == preloaded_path:
-            next_surf = preloader.get()
+            next_surf, next_kb = preloader.get()
         else:
             next_surf = load_surface(path, size)
+            if next_surf is not None and cfg.ken_burns:
+                next_kb = KenBurns(next_surf, size, cfg.zoom_min, cfg.zoom_max)
+            else:
+                next_kb = None
 
         if next_surf is None:
             continue
 
-        # Kick off preload of the image after this one.
+        # Kick off preload of the image after this one (includes KenBurns pre-scale).
         next_path = photos[idx % len(photos)]
         if next_path != preloaded_path:
-            preloader.request(next_path)
+            if cfg.ken_burns:
+                preloader.request(next_path, cfg.zoom_min, cfg.zoom_max)
+            else:
+                preloader.request(next_path, 1.0, 1.0)
             preloaded_path = next_path
 
-        # Build Ken Burns state for the incoming image. The transition renders
-        # it at t=0 so there's no snap when the dwell starts.
-        next_kb = KenBurns(next_surf, size)
-
-        # Transition into the new image, then Ken Burns dwell.
-        if not transition(screen, current, next_kb, FADE_SECS, clock):
-            break
-
-        dwell = max(0.0, SLIDE_SECS - FADE_SECS)
-        if not ken_burns_dwell(screen, next_kb, dwell, clock):
-            break
-
-        # Capture the final pan position as the base for the next transition.
-        current = pygame.Surface(size)
-        next_kb.blit_at(current, 1.0)
+        # Transition and dwell.
+        if next_kb is not None:
+            # Ken Burns: transition into t=0 frame, then animate.
+            if not transition(screen, current, next_kb, cfg.fade_secs, clock, cfg.fns):
+                break
+            dwell = max(0.0, cfg.slide_secs - cfg.fade_secs)
+            if not ken_burns_dwell(screen, next_kb, dwell, clock):
+                break
+            # Capture the final pan position as the base for the next transition.
+            current = pygame.Surface(size)
+            next_kb.blit_at(current, 1.0)
+        else:
+            # Ken Burns disabled: simple transition into static image.
+            static_kb = _StaticFrame(next_surf)
+            if not transition(screen, current, static_kb, cfg.fade_secs, clock, cfg.fns):
+                break
+            dwell = max(0.0, cfg.slide_secs - cfg.fade_secs)
+            if not wait(dwell, clock):
+                break
+            current = next_surf
 
     pygame.quit()
+
+
+class _StaticFrame:
+    """Minimal stand-in for KenBurns when ken_burns is disabled."""
+    def __init__(self, surf: pygame.Surface) -> None:
+        self._surf = surf
+
+    def blit_at(self, screen: pygame.Surface, _t: float) -> None:
+        screen.blit(self._surf, (0, 0))
 
 
 if __name__ == '__main__':
