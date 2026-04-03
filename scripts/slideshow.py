@@ -28,7 +28,6 @@ from PIL import Image, ImageOps
 # ---------------------------------------------------------------------------
 
 PHOTO_DIR    = '/var/lib/photo-frame/playable-photos'
-SPLASH_PATH  = '/opt/photo-frame/assets/splash.jpg'
 SLIDE_SECS   = int(os.environ.get('PHOTO_FRAME_SLIDE_SECONDS',   '25'))
 REFRESH_SECS = int(os.environ.get('PHOTO_FRAME_REFRESH_SECONDS', '300'))
 FADE_SECS    = 1.5
@@ -356,17 +355,11 @@ def main() -> None:
     size  = screen.get_size()
     clock = pygame.time.Clock()
 
-    # Show splash while the first photo loads.
-    splash = load_surface(SPLASH_PATH, size)
-    if splash:
-        screen.blit(splash, (0, 0))
-    else:
-        screen.fill((0, 0, 0))
+    screen.fill((0, 0, 0))
     pygame.display.flip()
 
-    current: pygame.Surface = splash or pygame.Surface(size)
-    if not splash:
-        current.fill((0, 0, 0))
+    current: pygame.Surface = pygame.Surface(size)
+    current.fill((0, 0, 0))
 
     photos:       list[str] = []
     idx:          int       = 0
