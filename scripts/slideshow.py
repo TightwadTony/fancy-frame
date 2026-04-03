@@ -148,12 +148,11 @@ def crossfade(
     clock: pygame.time.Clock,
 ) -> bool:
     """Alpha-blend old_surf → new_surf."""
-    new_frame = new_surf
+    tmp = new_surf.copy()
     steps = max(1, int(duration * FPS))
     for i in range(1, steps + 1):
         alpha = int(255 * i / steps)
         screen.blit(old_surf, (0, 0))
-        tmp = new_frame.copy()
         tmp.set_alpha(alpha)
         screen.blit(tmp, (0, 0))
         pygame.display.flip()
@@ -187,10 +186,10 @@ def fade_to_black(
             return False
 
     # Fade in
+    tmp = new_frame.copy()
     for i in range(1, steps + 1):
         alpha = int(255 * i / steps)
         screen.blit(black, (0, 0))
-        tmp = new_frame.copy()
         tmp.set_alpha(alpha)
         screen.blit(tmp, (0, 0))
         pygame.display.flip()
