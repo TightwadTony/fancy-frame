@@ -5,8 +5,7 @@ xset s off
 xset -dpms
 xset s noblank
 
-sleep 2
-sleep 5
+sleep 7
 
 SLIDE_SECONDS="${PHOTO_FRAME_SLIDE_SECONDS:-25}"
 REFRESH_SECONDS="${PHOTO_FRAME_REFRESH_SECONDS:-300}"
@@ -81,11 +80,13 @@ PHOTO_DIR = '/var/lib/photo-frame/playable-photos'
 if not os.path.isdir(PHOTO_DIR):
   xbmc.log(f'photo-frame: {PHOTO_DIR} missing; slideshow not started', xbmc.LOGERROR)
 else:
-  xbmc.sleep(2000)
-  xbmc.log('photo-frame: slideshow start attempt 1', xbmc.LOGINFO)
-  xbmc.executebuiltin(f'ActivateWindow(Pictures,{PHOTO_DIR},return)')
-  xbmc.sleep(700)
-  xbmc.executebuiltin(f'SlideShow({PHOTO_DIR},recursive,random)')
+  for attempt in range(1, 6):
+    xbmc.sleep(5000)
+    xbmc.log(f'photo-frame: slideshow attempt {attempt}', xbmc.LOGINFO)
+    xbmc.executebuiltin(f'ActivateWindow(Pictures,{PHOTO_DIR},return)')
+    xbmc.sleep(700)
+    xbmc.executebuiltin(f'SlideShow({PHOTO_DIR},recursive,random)')
+    xbmc.sleep(2000)
 EOF
 
 export PHOTO_FRAME_SLIDE_SECONDS="${SLIDE_SECONDS}"
@@ -113,24 +114,44 @@ KODI_PID=$!
 # then refresh every N seconds so newly added photos are picked up.
 if command -v kodi-send >/dev/null 2>&1; then
   (
-    for i in $(seq 1 20); do
+    # Wait until Kodi's event server is accepting connections before sending
+    # any commands; this prevents wasting retries before Kodi is ready.
+    for _ in $(seq 1 60); do
+      if ! kill -0 "${KODI_PID}" 2>/dev/null; then
+        exit 0
+      fi
+      if kodi-send --action="Noop" >/dev/null 2>&1; then
+        break
+      fi
+      sleep 1
+    done
+
+    # Retry slideshow start every 6 seconds for the first 90 seconds,
+    # giving Kodi plenty of time to finish initializing its GUI.
+    for i in $(seq 1 15); do
       if ! kill -0 "${KODI_PID}" 2>/dev/null; then
         exit 0
       fi
       kodi-send --action="SetGUISetting(slideshow.staytime,${SLIDE_SECONDS})" >/dev/null 2>&1 || true
 
-      # Start slideshow at launch and one delayed retry to avoid startup misses.
-      if [[ "${i}" -eq 1 || "${i}" -eq 6 ]]; then
-        # Dismiss any first-run dialogs (e.g. addon prompts) before navigating.
-        kodi-send --action="Back" >/dev/null 2>&1 || true
-        sleep 1
-        kodi-send --action="ActivateWindow(Pictures,${PHOTO_PLAY_DIR},return)" >/dev/null 2>&1 || true
-        sleep 1
-        kodi-send --action="SlideShow(${PHOTO_PLAY_DIR},recursive,random)" >/dev/null 2>&1 || true
-      fi
+      # Dismiss any first-run dialogs (e.g. addon prompts) before navigating.
+      kodi-send --action="Back" >/dev/null 2>&1 || true
+      sleep 1
+      kodi-send --action="ActivateWindow(Pictures,${PHOTO_PLAY_DIR},return)" >/dev/null 2>&1 || true
+      sleep 1
+      kodi-send --action="SlideShow(${PHOTO_PLAY_DIR},recursive,random)" >/dev/null 2>&1 || true
 
-      sleep 2
+      sleep 4
     done
+
+    # One final safety-net attempt after a 30s quiet period, catching any
+    # Kodi instances that finished initializing after the retry window closed.
+    sleep 30
+    if kill -0 "${KODI_PID}" 2>/dev/null; then
+      kodi-send --action="ActivateWindow(Pictures,${PHOTO_PLAY_DIR},return)" >/dev/null 2>&1 || true
+      sleep 1
+      kodi-send --action="SlideShow(${PHOTO_PLAY_DIR},recursive,random)" >/dev/null 2>&1 || true
+    fi
 
     while kill -0 "${KODI_PID}" 2>/dev/null; do
       sleep "${REFRESH_SECONDS}"
