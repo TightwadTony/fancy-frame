@@ -1,0 +1,247 @@
+import SwiftUI
+
+struct DeviceDetailView: View {
+    let frame: PhotoFrame
+
+    @State private var config: PhotoFrameConfig = .default
+    @State private var info: PhotoFrameInfo?
+    @State private var isLoading   = true
+    @State private var isSaving    = false
+    @State private var error: String?
+    @State private var savedConfig: PhotoFrameConfig = .default
+    @State private var showRestartConfirm = false
+    @State private var showRestartSuccess = false
+
+    private var hasChanges: Bool { config != savedConfig }
+
+    var body: some View {
+        Form {
+            if isLoading {
+                Section {
+                    HStack {
+                        Spacer()
+                        ProgressView("Loading…")
+                        Spacer()
+                    }
+                    .padding(.vertical)
+                }
+            } else {
+                slideshowSection
+                kenBurnsSection
+                systemSection
+                restartSection
+            }
+        }
+        .navigationTitle(frame.name)
+        .navigationBarTitleDisplayMode(.large)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                statusBadge
+            }
+            ToolbarItem(placement: .bottomBar) {
+                if hasChanges {
+                    Button(action: save) {
+                        if isSaving {
+                            ProgressView()
+                        } else {
+                            Label("Save Changes", systemImage: "checkmark")
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .disabled(isSaving)
+                }
+            }
+        }
+        .alert("Error", isPresented: .constant(error != nil), actions: {
+            Button("OK") { error = nil }
+        }, message: {
+            Text(error ?? "")
+        })
+        .alert("Restart Photo Frame?", isPresented: $showRestartConfirm) {
+            Button("Restart", role: .destructive) { sendRestart() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The frame will restart and be unavailable for about 30 seconds.")
+        }
+        .alert("Restarting…", isPresented: $showRestartSuccess) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("The photo frame is rebooting.")
+        }
+        .task { await load() }
+    }
+
+    // MARK: - Sections
+
+    private var slideshowSection: some View {
+        Section("Slideshow") {
+            // Slide Duration — stepper
+            Stepper(value: $config.slideSeconds, in: 1...300, step: 1) {
+                LabeledContent("Slide Duration") {
+                    Text("\(Int(config.slideSeconds)) s")
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            // Transition Duration — slider
+            VStack(alignment: .leading, spacing: 6) {
+                LabeledContent("Transition Duration") {
+                    Text(String(format: "%.1f s", config.fadeSeconds))
+                        .foregroundStyle(.secondary)
+                }
+                Slider(value: $config.fadeSeconds, in: 0...5, step: 0.1)
+                    .tint(.accentColor)
+            }
+            .padding(.vertical, 2)
+
+            // Transitions — drill-in
+            NavigationLink {
+                TransitionsPickerView(selected: $config.transitions)
+            } label: {
+                LabeledContent("Transitions") {
+                    Text(transitionsSummary)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private var kenBurnsSection: some View {
+        Section("Ken Burns Effect") {
+            Toggle("Enable Ken Burns", isOn: $config.kenBurns)
+
+            if config.kenBurns {
+                VStack(alignment: .leading, spacing: 6) {
+                    LabeledContent("Zoom Range") {
+                        Text(String(format: "%.2f – %.2f", config.kenBurnsZoomMin, config.kenBurnsZoomMax))
+                            .foregroundStyle(.secondary)
+                    }
+                    // Dual handle approximated with two sliders
+                    HStack(spacing: 8) {
+                        Text("1.0×").font(.caption).foregroundStyle(.secondary)
+                        Slider(
+                            value: $config.kenBurnsZoomMin,
+                            in: 1.0...config.kenBurnsZoomMax,
+                            step: 0.01
+                        )
+                        .tint(.accentColor)
+                        Text("min").font(.caption).foregroundStyle(.secondary)
+                    }
+                    HStack(spacing: 8) {
+                        Text("1.0×").font(.caption).foregroundStyle(.secondary)
+                        Slider(
+                            value: $config.kenBurnsZoomMax,
+                            in: config.kenBurnsZoomMin...2.0,
+                            step: 0.01
+                        )
+                        .tint(.accentColor)
+                        Text("max").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+        }
+    }
+
+    private var systemSection: some View {
+        Section("System") {
+            if let info {
+                LabeledContent("Address", value: info.ipAddress ?? frame.host ?? "—")
+                LabeledContent("Uptime", value: info.uptimeFormatted)
+            }
+        }
+    }
+
+    private var restartSection: some View {
+        Section {
+            Button(role: .destructive) {
+                showRestartConfirm = true
+            } label: {
+                HStack {
+                    Spacer()
+                    Text("Restart Photo Frame…")
+                    Spacer()
+                }
+            }
+        }
+    }
+
+    // MARK: - Status badge
+
+    private var statusBadge: some View {
+        Label(
+            frame.isReachable ? "Online" : "Unavailable",
+            systemImage: frame.isReachable ? "circle.fill" : "circle.fill"
+        )
+        .labelStyle(.titleAndIcon)
+        .font(.caption)
+        .foregroundStyle(frame.isReachable ? .green : .red)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
+        .background(
+            Capsule().fill(frame.isReachable
+                           ? Color.green.opacity(0.12)
+                           : Color.red.opacity(0.12))
+        )
+    }
+
+    // MARK: - Helpers
+
+    private var transitionsSummary: String {
+        switch config.transitions.count {
+        case 0: return "None"
+        case 1: return config.transitions[0].replacingOccurrences(of: "_", with: " ").capitalized
+        case PhotoFrameConfig.default.transitions.count: return "All"
+        default: return "\(config.transitions.count) selected"
+        }
+    }
+
+    // MARK: - Network
+
+    private func load() async {
+        guard let api = frame.api else {
+            isLoading = false
+            error = "Frame is not reachable."
+            return
+        }
+        do {
+            async let fetchedConfig = api.fetchConfig()
+            async let fetchedInfo   = api.fetchInfo()
+            let (c, i) = try await (fetchedConfig, fetchedInfo)
+            config      = c
+            savedConfig = c
+            info        = i
+        } catch {
+            self.error = error.localizedDescription
+        }
+        isLoading = false
+    }
+
+    private func save() {
+        guard let api = frame.api else { return }
+        isSaving = true
+        Task {
+            do {
+                let updated = try await api.updateConfig(config)
+                config      = updated
+                savedConfig = updated
+            } catch {
+                self.error = error.localizedDescription
+            }
+            isSaving = false
+        }
+    }
+
+    private func sendRestart() {
+        guard let api = frame.api else { return }
+        Task {
+            do {
+                try await api.restart()
+                showRestartSuccess = true
+            } catch {
+                self.error = error.localizedDescription
+            }
+        }
+    }
+}
