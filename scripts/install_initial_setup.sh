@@ -267,7 +267,6 @@ apt install -y \
   python3-pygame \
   python3-pil \
   imagemagick \
-  sqlite3 \
   samba \
   avahi-daemon \
   hostapd \
@@ -286,9 +285,9 @@ chown -R "${TARGET_USER}:${TARGET_USER}" /var/lib/photo-frame
 mkdir -p "${INSTALL_ROOT}"
 cp -a "${PROJECT_ROOT}/scripts" "${INSTALL_ROOT}/"
 cp -a "${PROJECT_ROOT}/portal" "${INSTALL_ROOT}/"
+cp -a "${PROJECT_ROOT}/api" "${INSTALL_ROOT}/"
 cp -a "${PROJECT_ROOT}/config" "${INSTALL_ROOT}/"
 cp -a "${PROJECT_ROOT}/systemd" "${INSTALL_ROOT}/"
-[[ -d "${PROJECT_ROOT}/assets" ]] && cp -a "${PROJECT_ROOT}/assets" "${INSTALL_ROOT}/"
 chmod +x "${INSTALL_ROOT}"/scripts/*.sh
 
 
@@ -320,10 +319,16 @@ install -m 0644 "${INSTALL_ROOT}/systemd/photo-frame.service" /etc/systemd/syste
 install -m 0644 "${INSTALL_ROOT}/systemd/photo-frame-wifi-bootstrap.service" /etc/systemd/system/photo-frame-wifi-bootstrap.service
 install -m 0644 "${INSTALL_ROOT}/systemd/photo-frame-setup-mode.service" /etc/systemd/system/photo-frame-setup-mode.service
 install -m 0644 "${INSTALL_ROOT}/systemd/photo-frame-setup-portal.service" /etc/systemd/system/photo-frame-setup-portal.service
+install -m 0644 "${INSTALL_ROOT}/systemd/photo-frame-api.service" /etc/systemd/system/photo-frame-api.service
 
 systemctl daemon-reload
 systemctl enable photo-frame.service
 systemctl enable photo-frame-wifi-bootstrap.service
+systemctl enable photo-frame-api.service
+
+
+echo "Installing Avahi mDNS advertisement..."
+install -m 0644 "${INSTALL_ROOT}/config/avahi-photo-frame.service" /etc/avahi/services/photo-frame.service
 
 
 echo "Configuring Samba share..."
