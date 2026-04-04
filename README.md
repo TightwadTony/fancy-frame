@@ -9,7 +9,7 @@ A lightweight, headless photo slideshow application for Raspberry Pi Zero with a
 - **SMB network share** for adding/removing photos from phones, laptops, or other devices on the same local network
 - **Automatic reconnection** with saved Wi-Fi credentials
 - **Boot-time AP fallback only** (onboarding AP starts only if Wi-Fi is not connected within 60 seconds after boot)
-- **Kodi slideshow backend** for smoother transitions and reliable playback
+- **Python/pygame slideshow** with crossfade, fade-to-black, and wipe transitions plus Ken Burns zoom/pan
 - **Systemd services** for reliable boot and auto-restart
 
 ## Hardware Requirements
@@ -117,7 +117,7 @@ photo-frame/
 ├── config/
 │   ├── hostapd.conf                  # Access point config
 │   ├── dnsmasq-photo-frame.conf      # DHCP/DNS for AP mode
-│   └── smb-share.conf                # Samba share snippet
+│   └── (Samba share is configured by installer logic)
 ├── SETUP.md                          # Detailed setup instructions
 └── README.md                         # This file
 ```
@@ -133,13 +133,13 @@ Connect to the photo share and drag files in or out:
 open smb://photo-frame/photos
 ```
 
-Supported formats: JPEG, PNG. Slideshow picks up newly added photos during periodic refresh (default 300 seconds).
+Supported formats: JPEG, PNG, GIF, BMP, WebP, TIFF.
 
-Current slideshow behavior:
-- Randomized order (`SlideShow(...,recursive,random)`)
-- Recursive through all folders under `/srv/photos`
-- Target photo duration defaults to 25 seconds
-- New photos are picked up by periodic refresh (default 300 seconds)
+Slideshow behaviour:
+- Randomised order, reshuffled when the list is exhausted
+- Scans all files directly under `/srv/photos` (symlinks resolved by the installer)
+- New photos are picked up by periodic rescan (default 300 seconds)
+- Settings (slide duration, transitions, Ken Burns zoom range, etc.) are read from `/srv/photos/photo-frame.conf`, which is accessible via the same Samba share — edit it from any device on the network and changes take effect within 5 minutes
 
 ### Force onboarding mode (manual reconfiguration)
 
@@ -179,7 +179,7 @@ ssh photo@192.168.4.1
 - **Change AP SSID/password**: Edit `/etc/hostapd/hostapd.conf`
 - **Adjust slideshow delay**: Set `PHOTO_FRAME_SLIDE_SECONDS` (default 25)
 - **Adjust refresh interval for newly added photos**: Set `PHOTO_FRAME_REFRESH_SECONDS` (default 300)
-- **Change share path**: Edit `config/smb-share.conf` and move `/srv/photos`
+- **Change share path**: Update `/srv/photos` references in `scripts/install_initial_setup.sh` (Samba section), then reinstall or reapply the Samba config block
 - **Add multiple Wi-Fi networks**: Manually edit `/etc/wpa_supplicant/wpa_supplicant.conf` with multiple network blocks
 
 ## Troubleshooting
@@ -193,7 +193,7 @@ journalctl -u photo-frame-wifi-bootstrap -n 50
 
 Common causes:
 - No photos in `/srv/photos` (add at least one JPEG/PNG)
-- Display not detected (verify with `cat /var/log/Xorg.0.log` and `ps aux | grep kodi`)
+- Display not detected (verify with `cat /var/log/Xorg.0.log`)
 - Permission issue on photo directory (verify: `ls -ld /srv/photos`)
 
 ### Can't connect to SMB share
