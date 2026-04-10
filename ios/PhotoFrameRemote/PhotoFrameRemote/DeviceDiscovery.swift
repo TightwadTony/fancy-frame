@@ -142,7 +142,9 @@ final class DeviceDiscovery {
     private func extractHostPort(from endpoint: NWEndpoint, result: NWBrowser.Result) -> (String, Int) {
         // Try to get the IP from the resolved path endpoint
         if case .hostPort(let host, let port) = endpoint {
-            return ("\(host)", Int(port.rawValue))
+            // Strip zone identifier (e.g. "%en0") — invalid in URLs
+            let hostStr = "\(host)".components(separatedBy: "%").first ?? "\(host)"
+            return (hostStr, Int(port.rawValue))
         }
         // Fallback: parse from the browser result endpoint
         if case .service(let name, _, let domain, _) = result.endpoint {

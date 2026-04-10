@@ -2,40 +2,18 @@ import SwiftUI
 
 struct DeviceListView: View {
     @Environment(DeviceDiscovery.self) private var discovery
-    @State private var searchText = ""
-
-    private var filtered: [PhotoFrame] {
-        guard !searchText.isEmpty else { return discovery.frames }
-        return discovery.frames.filter {
-            $0.name.localizedCaseInsensitiveContains(searchText) ||
-            ($0.host ?? "").localizedCaseInsensitiveContains(searchText)
-        }
-    }
 
     var body: some View {
         NavigationStack {
-            Group {
-                if discovery.frames.isEmpty {
-                    EmptyStateView(isSearching: discovery.isSearching) {
-                        discovery.rescan()
-                    }
-                } else {
-                    List(filtered) { frame in
-                        NavigationLink {
-                            DeviceDetailView(frame: frame)
-                        } label: {
-                            FrameRowView(frame: frame)
-                        }
-                    }
-                    .listStyle(.insetGrouped)
-                    .searchable(text: $searchText, prompt: "Search")
-                }
-            }
-            .navigationTitle("Photo Frames")
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
+            VStack(spacing: 0) {
+                HStack(alignment: .center) {
+                    Text("Photo Frames")
+                        .font(.largeTitle.bold())
+                    Spacer()
                     if discovery.isSearching {
                         ProgressView()
+                            .scaleEffect(0.35)
+                            .frame(width: 20, height: 20)
                     } else {
                         Button {
                             discovery.rescan()
@@ -44,7 +22,26 @@ struct DeviceListView: View {
                         }
                     }
                 }
+                .padding(.horizontal)
+                .padding(.bottom, 4)
+                .background(Color(.systemGroupedBackground))
+
+                if discovery.frames.isEmpty {
+                    EmptyStateView(isSearching: discovery.isSearching) {
+                        discovery.rescan()
+                    }
+                } else {
+                    List(discovery.frames) { frame in
+                        NavigationLink {
+                            DeviceDetailView(frame: frame)
+                        } label: {
+                            FrameRowView(frame: frame)
+                        }
+                    }
+                    .listStyle(.insetGrouped)
+                }
             }
+            .navigationBarHidden(true)
         }
     }
 }

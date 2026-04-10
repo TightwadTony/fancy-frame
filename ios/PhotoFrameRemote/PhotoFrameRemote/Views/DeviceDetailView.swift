@@ -44,7 +44,7 @@ struct DeviceDetailView: View {
                         if isSaving {
                             ProgressView()
                         } else {
-                            Label("Save Changes", systemImage: "checkmark")
+                            Text("Apply Changes")
                         }
                     }
                     .buttonStyle(.borderedProminent)
