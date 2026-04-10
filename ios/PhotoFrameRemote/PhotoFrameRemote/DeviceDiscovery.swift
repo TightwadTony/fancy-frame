@@ -34,6 +34,7 @@ final class PhotoFrame: Identifiable {
 
 // MARK: - Discovery
 
+@MainActor
 @Observable
 final class DeviceDiscovery {
     private(set) var frames: [PhotoFrame] = []
@@ -44,10 +45,6 @@ final class DeviceDiscovery {
 
     init() {
         start()
-    }
-
-    deinit {
-        stop()
     }
 
     func start() {

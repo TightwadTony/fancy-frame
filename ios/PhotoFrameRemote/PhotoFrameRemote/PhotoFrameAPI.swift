@@ -74,6 +74,9 @@ struct PhotoFrameAPI {
 
     private var session: URLSession { .shared }
 
+    // Error response from PATCH with validation errors
+    private struct ErrorBody: Decodable { let errors: [String] }
+
     private func get<T: Decodable>(_ path: String) async throws -> T {
         let url = baseURL.appendingPathComponent(path)
         let (data, response) = try await session.data(from: url)
@@ -95,7 +98,6 @@ struct PhotoFrameAPI {
         let (data, response) = try await session.data(for: req)
         guard let http = response as? HTTPURLResponse else { throw APIError.httpError(0) }
         if http.statusCode == 422 {
-            struct ErrorBody: Decodable { let errors: [String] }
             if let body = try? JSONDecoder().decode(ErrorBody.self, from: data) {
                 throw APIError.validationError(body.errors)
             }

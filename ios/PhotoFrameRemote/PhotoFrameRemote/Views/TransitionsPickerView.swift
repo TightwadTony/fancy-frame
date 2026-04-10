@@ -28,7 +28,7 @@ struct TransitionsPickerView: View {
                             Spacer()
                             if selected.contains(transition.id) {
                                 Image(systemName: "checkmark.circle.fill")
-                                    .foregroundStyle(.accent)
+                                    .foregroundStyle(.tint)
                                     .font(.title3)
                             } else {
                                 Image(systemName: "circle")

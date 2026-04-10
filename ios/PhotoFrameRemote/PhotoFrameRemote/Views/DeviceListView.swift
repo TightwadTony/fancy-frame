@@ -62,7 +62,7 @@ private struct FrameRowView: View {
                     .frame(width: 48, height: 48)
                 Image(systemName: "photo.artframe")
                     .font(.title2)
-                    .foregroundStyle(frame.isReachable ? .accent : .secondary)
+                    .foregroundStyle(frame.isReachable ? Color.accentColor : Color.secondary)
             }
 
             VStack(alignment: .leading, spacing: 3) {
