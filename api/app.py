@@ -15,15 +15,19 @@ import re
 import socket
 import subprocess
 import time
+import uuid
 from pathlib import Path
+from werkzeug.utils import secure_filename
 
 from flask import Flask, jsonify, request
 
 app = Flask(__name__)
 
 CONFIG_FILE = Path('/srv/photos/photo-frame.conf')
+PHOTOS_DIR  = Path('/srv/photos')
 
 VALID_TRANSITIONS = {'crossfade', 'fade_to_black', 'wipe'}
+VALID_IMAGE_EXTS  = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tif', '.tiff'}
 
 CONFIG_DEFAULTS: dict[str, str] = {
     'slide_seconds':      '25',
@@ -228,6 +232,56 @@ def patch_config():
 
     _write_config(merged)
     return jsonify(_config_to_dict(merged))
+
+
+@app.route('/api/photos', methods=['GET'])
+def get_photos():
+    """Return the count of photos currently in the photos directory."""
+    try:
+        count = sum(
+            1 for f in PHOTOS_DIR.iterdir()
+            if f.suffix.lower() in VALID_IMAGE_EXTS
+            and not f.name.startswith('.')
+            and not f.name.startswith('._')
+        )
+    except OSError:
+        count = 0
+    return jsonify({'count': count})
+
+
+@app.route('/api/photos', methods=['POST'])
+def upload_photo():
+    """
+    Accept a multipart file upload (field name: 'photo') and save it to
+    /srv/photos/. Only image extensions are accepted. Returns 201 with the
+    saved filename on success.
+    """
+    if 'photo' not in request.files:
+        return jsonify({'error': 'No photo field in request'}), 400
+
+    file = request.files['photo']
+    if not file.filename:
+        return jsonify({'error': 'Empty filename'}), 400
+
+    ext = Path(file.filename).suffix.lower()
+    if ext not in VALID_IMAGE_EXTS:
+        return jsonify({'error': f'Unsupported file type: {ext}'}), 422
+
+    # Sanitize: strip any path components, replace spaces
+    base = secure_filename(file.filename)
+    if not base:
+        base = f'photo_{uuid.uuid4().hex}{ext}'
+
+    dest = PHOTOS_DIR / base
+    # Avoid collisions by appending a short unique suffix if needed
+    if dest.exists():
+        stem = Path(base).stem
+        dest = PHOTOS_DIR / f'{stem}_{uuid.uuid4().hex[:8]}{ext}'
+
+    file.save(dest)
+    os.chmod(dest, 0o666)
+
+    return jsonify({'filename': dest.name}), 201
 
 
 @app.route('/api/restart', methods=['POST'])

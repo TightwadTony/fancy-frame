@@ -51,6 +51,10 @@ struct PhotoFrameConfig: Codable, Equatable {
     )
 }
 
+struct PhotoCount: Decodable {
+    let count: Int
+}
+
 // MARK: - API Client
 
 enum APIError: LocalizedError {
@@ -120,6 +124,34 @@ struct PhotoFrameAPI {
 
     func updateConfig(_ config: PhotoFrameConfig) async throws -> PhotoFrameConfig {
         try await patch("api/config", body: config)
+    }
+
+    func fetchPhotoCount() async throws -> Int {
+        let result: PhotoCount = try await get("api/photos")
+        return result.count
+    }
+
+    func uploadPhoto(_ jpegData: Data, filename: String) async throws {
+        let url = baseURL.appendingPathComponent("api/photos")
+        let boundary = "Boundary-\(UUID().uuidString)"
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+
+        var body = Data()
+        let crlf = "\r\n"
+        body.append("--\(boundary)\(crlf)".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"photo\"; filename=\"\(filename)\"\(crlf)".data(using: .utf8)!)
+        body.append("Content-Type: image/jpeg\(crlf)\(crlf)".data(using: .utf8)!)
+        body.append(jpegData)
+        body.append("\(crlf)--\(boundary)--\(crlf)".data(using: .utf8)!)
+        req.httpBody = body
+
+        let (_, response) = try await session.data(for: req)
+        guard let http = response as? HTTPURLResponse,
+              (200..<300).contains(http.statusCode) else {
+            throw APIError.httpError((response as? HTTPURLResponse)?.statusCode ?? 0)
+        }
     }
 
     func restart() async throws {

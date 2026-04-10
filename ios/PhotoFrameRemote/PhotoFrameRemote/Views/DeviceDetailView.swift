@@ -3,19 +3,14 @@ import SwiftUI
 struct DeviceDetailView: View {
     let frame: PhotoFrame
 
-    @State private var config: PhotoFrameConfig = .default
+    @State private var config: PhotoFrameConfig?
     @State private var info: PhotoFrameInfo?
-    @State private var isLoading   = true
-    @State private var isSaving    = false
+    @State private var photoCount: Int?
+    @State private var isLoading = true
     @State private var error: String?
-    @State private var savedConfig: PhotoFrameConfig = .default
-    @State private var showRestartConfirm = false
-    @State private var showRestartSuccess = false
-
-    private var hasChanges: Bool { config != savedConfig }
 
     var body: some View {
-        Form {
+        List {
             if isLoading {
                 Section {
                     HStack {
@@ -26,145 +21,60 @@ struct DeviceDetailView: View {
                     .padding(.vertical)
                 }
             } else {
-                slideshowSection
-                kenBurnsSection
-                systemSection
-                restartSection
-            }
-        }
-        .navigationTitle(frame.name)
-        .navigationBarTitleDisplayMode(.large)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                statusBadge
-            }
-            ToolbarItem(placement: .bottomBar) {
-                if hasChanges {
-                    Button(action: save) {
-                        if isSaving {
-                            ProgressView()
-                        } else {
-                            Text("Apply Changes")
+                // Status row
+                Section {
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            if let info {
+                                Label(info.ipAddress ?? frame.host ?? "—", systemImage: "network")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                Label("Up \(info.uptimeFormatted)", systemImage: "clock")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Label(photoCount.map { "\($0) photo\($0 == 1 ? "" : "s")" } ?? "— photos",
+                                  systemImage: "photo.stack")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
                         }
+                        Spacer()
+                        statusBadge
                     }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .disabled(isSaving)
+                    .padding(.vertical, 4)
+
+                    if let config {
+                        Text(settingsSummary(config))
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+
+                // Navigation actions
+                Section {
+                    NavigationLink {
+                        PhotosView(frame: frame)
+                    } label: {
+                        Label("Manage Photos", systemImage: "photo.on.rectangle.angled")
+                    }
+
+                    NavigationLink {
+                        SettingsView(frame: frame)
+                    } label: {
+                        Label("Settings", systemImage: "slider.horizontal.3")
+                    }
                 }
             }
         }
+        .listStyle(.insetGrouped)
+        .navigationTitle(frame.name)
+        .navigationBarTitleDisplayMode(.large)
         .alert("Error", isPresented: .constant(error != nil), actions: {
             Button("OK") { error = nil }
         }, message: {
             Text(error ?? "")
         })
-        .alert("Restart Photo Frame?", isPresented: $showRestartConfirm) {
-            Button("Restart", role: .destructive) { sendRestart() }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("The frame will restart and be unavailable for about 30 seconds.")
-        }
-        .alert("Restarting…", isPresented: $showRestartSuccess) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text("The photo frame is rebooting.")
-        }
         .task { await load() }
-    }
-
-    // MARK: - Sections
-
-    private var slideshowSection: some View {
-        Section("Slideshow") {
-            // Slide Duration — stepper
-            Stepper(value: $config.slideSeconds, in: 1...300, step: 1) {
-                LabeledContent("Slide Duration") {
-                    Text("\(Int(config.slideSeconds)) s")
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            // Transition Duration — slider
-            VStack(alignment: .leading, spacing: 6) {
-                LabeledContent("Transition Duration") {
-                    Text(String(format: "%.1f s", config.fadeSeconds))
-                        .foregroundStyle(.secondary)
-                }
-                Slider(value: $config.fadeSeconds, in: 0...5, step: 0.1)
-                    .tint(.accentColor)
-            }
-            .padding(.vertical, 2)
-
-            // Transitions — drill-in
-            NavigationLink {
-                TransitionsPickerView(selected: $config.transitions)
-            } label: {
-                LabeledContent("Transitions") {
-                    Text(transitionsSummary)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
-    }
-
-    private var kenBurnsSection: some View {
-        Section("Ken Burns Effect") {
-            Toggle("Enable Ken Burns", isOn: $config.kenBurns)
-
-            if config.kenBurns {
-                VStack(alignment: .leading, spacing: 6) {
-                    LabeledContent("Zoom Range") {
-                        Text(String(format: "%.2f – %.2f", config.kenBurnsZoomMin, config.kenBurnsZoomMax))
-                            .foregroundStyle(.secondary)
-                    }
-                    // Dual handle approximated with two sliders
-                    HStack(spacing: 8) {
-                        Text("1.0×").font(.caption).foregroundStyle(.secondary)
-                        Slider(
-                            value: $config.kenBurnsZoomMin,
-                            in: 1.0...config.kenBurnsZoomMax,
-                            step: 0.01
-                        )
-                        .tint(.accentColor)
-                        Text("min").font(.caption).foregroundStyle(.secondary)
-                    }
-                    HStack(spacing: 8) {
-                        Text("1.0×").font(.caption).foregroundStyle(.secondary)
-                        Slider(
-                            value: $config.kenBurnsZoomMax,
-                            in: config.kenBurnsZoomMin...2.0,
-                            step: 0.01
-                        )
-                        .tint(.accentColor)
-                        Text("max").font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-                .padding(.vertical, 2)
-            }
-        }
-    }
-
-    private var systemSection: some View {
-        Section("System") {
-            if let info {
-                LabeledContent("Address", value: info.ipAddress ?? frame.host ?? "—")
-                LabeledContent("Uptime", value: info.uptimeFormatted)
-            }
-        }
-    }
-
-    private var restartSection: some View {
-        Section {
-            Button(role: .destructive) {
-                showRestartConfirm = true
-            } label: {
-                HStack {
-                    Spacer()
-                    Text("Restart Photo Frame…")
-                    Spacer()
-                }
-            }
-        }
     }
 
     // MARK: - Status badge
@@ -172,7 +82,7 @@ struct DeviceDetailView: View {
     private var statusBadge: some View {
         Label(
             frame.isReachable ? "Online" : "Unavailable",
-            systemImage: frame.isReachable ? "circle.fill" : "circle.fill"
+            systemImage: "circle.fill"
         )
         .labelStyle(.titleAndIcon)
         .font(.caption)
@@ -188,13 +98,17 @@ struct DeviceDetailView: View {
 
     // MARK: - Helpers
 
-    private var transitionsSummary: String {
-        switch config.transitions.count {
-        case 0: return "None"
-        case 1: return config.transitions[0].replacingOccurrences(of: "_", with: " ").capitalized
-        case PhotoFrameConfig.default.transitions.count: return "All"
-        default: return "\(config.transitions.count) selected"
+    private func settingsSummary(_ c: PhotoFrameConfig) -> String {
+        let slide = "\(Int(c.slideSeconds))s slides"
+        let transition: String
+        switch c.transitions.count {
+        case 0: transition = "No transitions"
+        case 1: transition = c.transitions[0].replacingOccurrences(of: "_", with: " ").capitalized
+        case PhotoFrameConfig.default.transitions.count: transition = "All transitions"
+        default: transition = "\(c.transitions.count) transitions"
         }
+        let kb = c.kenBurns ? "Ken Burns on" : "Ken Burns off"
+        return "\(slide)  ·  \(transition)  ·  \(kb)"
     }
 
     // MARK: - Network
@@ -208,40 +122,14 @@ struct DeviceDetailView: View {
         do {
             async let fetchedConfig = api.fetchConfig()
             async let fetchedInfo   = api.fetchInfo()
-            let (c, i) = try await (fetchedConfig, fetchedInfo)
-            config      = c
-            savedConfig = c
-            info        = i
+            async let fetchedCount  = api.fetchPhotoCount()
+            let (c, i, n) = try await (fetchedConfig, fetchedInfo, fetchedCount)
+            config     = c
+            info       = i
+            photoCount = n
         } catch {
             self.error = error.localizedDescription
         }
         isLoading = false
-    }
-
-    private func save() {
-        guard let api = frame.api else { return }
-        isSaving = true
-        Task {
-            do {
-                let updated = try await api.updateConfig(config)
-                config      = updated
-                savedConfig = updated
-            } catch {
-                self.error = error.localizedDescription
-            }
-            isSaving = false
-        }
-    }
-
-    private func sendRestart() {
-        guard let api = frame.api else { return }
-        Task {
-            do {
-                try await api.restart()
-                showRestartSuccess = true
-            } catch {
-                self.error = error.localizedDescription
-            }
-        }
     }
 }
