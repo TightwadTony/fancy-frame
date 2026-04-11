@@ -153,11 +153,18 @@ private struct UploadRowView: View {
 
 // MARK: - Photo picker wrapper
 
-struct PhotoSelection {
+struct PhotoSelection: @unchecked Sendable {
     let provider: NSItemProvider
     let suggestedFilename: String
 
     func loadAsJPEG() async throws -> (Data, String) {
+        let filename = URL(fileURLWithPath: suggestedFilename)
+            .deletingPathExtension().lastPathComponent + ".jpg"
+        let data = try await loadJPEGData(from: provider)
+        return (data, filename)
+    }
+
+    private nonisolated func loadJPEGData(from provider: NSItemProvider) async throws -> Data {
         try await withCheckedThrowingContinuation { continuation in
             _ = provider.loadObject(ofClass: UIImage.self) { object, error in
                 if let error {
@@ -169,9 +176,7 @@ struct PhotoSelection {
                     continuation.resume(throwing: UploadError.conversionFailed)
                     return
                 }
-                let stem = URL(fileURLWithPath: self.suggestedFilename).deletingPathExtension().lastPathComponent
-                let filename = "\(stem).jpg"
-                continuation.resume(returning: (data, filename))
+                continuation.resume(returning: data)
             }
         }
     }

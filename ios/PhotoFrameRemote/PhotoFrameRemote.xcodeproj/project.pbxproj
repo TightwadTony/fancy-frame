@@ -14,6 +14,8 @@
 		100000000000000000000017 /* DeviceDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10000000000000000000000B /* DeviceDetailView.swift */; };
 		100000000000000000000018 /* DeviceListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10000000000000000000000C /* DeviceListView.swift */; };
 		100000000000000000000019 /* TransitionsPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10000000000000000000000D /* TransitionsPickerView.swift */; };
+		10000000000000000000001C /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10000000000000000000001A /* SettingsView.swift */; };
+		10000000000000000000001D /* PhotosView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10000000000000000000001B /* PhotosView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -25,6 +27,8 @@
 		10000000000000000000000B /* DeviceDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DeviceDetailView.swift; path = PhotoFrameRemote/Views/DeviceDetailView.swift; sourceTree = SOURCE_ROOT; };
 		10000000000000000000000C /* DeviceListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DeviceListView.swift; path = PhotoFrameRemote/Views/DeviceListView.swift; sourceTree = SOURCE_ROOT; };
 		10000000000000000000000D /* TransitionsPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TransitionsPickerView.swift; path = PhotoFrameRemote/Views/TransitionsPickerView.swift; sourceTree = SOURCE_ROOT; };
+		10000000000000000000001A /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SettingsView.swift; path = PhotoFrameRemote/Views/SettingsView.swift; sourceTree = SOURCE_ROOT; };
+		10000000000000000000001B /* PhotosView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PhotosView.swift; path = PhotoFrameRemote/Views/PhotosView.swift; sourceTree = SOURCE_ROOT; };
 		10000000000000000000000E /* PhotoFrameRemote.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; path = PhotoFrameRemote.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -63,6 +67,8 @@
 				10000000000000000000000B /* DeviceDetailView.swift */,
 				10000000000000000000000C /* DeviceListView.swift */,
 				10000000000000000000000D /* TransitionsPickerView.swift */,
+				10000000000000000000001A /* SettingsView.swift */,
+				10000000000000000000001B /* PhotosView.swift */,
 			);
 			name = Views;
 			path = PhotoFrameRemote/Views;
@@ -142,6 +148,8 @@
 				100000000000000000000017 /* DeviceDetailView.swift in Sources */,
 				100000000000000000000018 /* DeviceListView.swift in Sources */,
 				100000000000000000000019 /* TransitionsPickerView.swift in Sources */,
+				10000000000000000000001C /* SettingsView.swift in Sources */,
+				10000000000000000000001D /* PhotosView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
