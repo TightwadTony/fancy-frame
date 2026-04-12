@@ -16,6 +16,7 @@
 		100000000000000000000019 /* TransitionsPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10000000000000000000000D /* TransitionsPickerView.swift */; };
 		10000000000000000000001C /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10000000000000000000001A /* SettingsView.swift */; };
 		10000000000000000000001D /* PhotosView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10000000000000000000001B /* PhotosView.swift */; };
+		100000000000000000000034 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000035 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -27,9 +28,10 @@
 		10000000000000000000000B /* DeviceDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DeviceDetailView.swift; path = PhotoFrameRemote/Views/DeviceDetailView.swift; sourceTree = SOURCE_ROOT; };
 		10000000000000000000000C /* DeviceListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DeviceListView.swift; path = PhotoFrameRemote/Views/DeviceListView.swift; sourceTree = SOURCE_ROOT; };
 		10000000000000000000000D /* TransitionsPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TransitionsPickerView.swift; path = PhotoFrameRemote/Views/TransitionsPickerView.swift; sourceTree = SOURCE_ROOT; };
+		10000000000000000000000E /* FancyFrame.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; path = FancyFrame.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		10000000000000000000001A /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SettingsView.swift; path = PhotoFrameRemote/Views/SettingsView.swift; sourceTree = SOURCE_ROOT; };
 		10000000000000000000001B /* PhotosView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PhotosView.swift; path = PhotoFrameRemote/Views/PhotosView.swift; sourceTree = SOURCE_ROOT; };
-		10000000000000000000000E /* PhotoFrameRemote.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; path = PhotoFrameRemote.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		100000000000000000000035 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Assets.xcassets; path = PhotoFrameRemote/Assets.xcassets; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -45,6 +47,7 @@
 			isa = PBXGroup;
 			children = (
 				100000000000000000000005 /* Info.plist */,
+				100000000000000000000035 /* Assets.xcassets */,
 				100000000000000000000006 /* ContentView.swift */,
 				100000000000000000000007 /* DeviceDiscovery.swift */,
 				100000000000000000000008 /* PhotoFrameAPI.swift */,
@@ -56,7 +59,7 @@
 		100000000000000000000004 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				10000000000000000000000E /* PhotoFrameRemote.app */,
+				10000000000000000000000E /* FancyFrame.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -77,9 +80,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		100000000000000000000010 /* PhotoFrameRemote */ = {
+		100000000000000000000010 /* FancyFrame */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 100000000000000000000021 /* Build configuration list for PBXNativeTarget "PhotoFrameRemote" */;
+			buildConfigurationList = 100000000000000000000021 /* Build configuration list for PBXNativeTarget "FancyFrame" */;
 			buildPhases = (
 				100000000000000000000011 /* Sources */,
 				100000000000000000000012 /* Resources */,
@@ -88,9 +91,9 @@
 			);
 			dependencies = (
 			);
-			name = PhotoFrameRemote;
-			productName = PhotoFrameRemote;
-			productReference = 10000000000000000000000E /* PhotoFrameRemote.app */;
+			name = FancyFrame;
+			productName = FancyFrame;
+			productReference = 10000000000000000000000E /* FancyFrame.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -121,7 +124,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				100000000000000000000010 /* PhotoFrameRemote */,
+				100000000000000000000010 /* FancyFrame */,
 			);
 		};
 /* End PBXProject section */
@@ -131,6 +134,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				100000000000000000000034 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -192,10 +196,10 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				INFOPLIST_FILE = PhotoFrameRemote/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.photo-frame.PhotoFrameRemote";
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = FancyFrame;
 				SDKROOT = iphoneos;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -239,9 +243,9 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				INFOPLIST_FILE = PhotoFrameRemote/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.photo-frame.PhotoFrameRemote";
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = FancyFrame;
 				SDKROOT = iphoneos;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -255,17 +259,18 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_OBJC_WEAK = YES;
-				CODE_SIGN_IDENTITY = "";
+				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = HZ7L6K5VDQ;
 				INFOPLIST_FILE = PhotoFrameRemote/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Photo Frame Manager";
+				INFOPLIST_KEY_CFBundleDisplayName = FancyFrame;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
-				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MARKETING_VERSION = 1;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.photo-frame.PhotoFrameRemote";
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = FancyFrame;
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_VERSION = 6.0;
@@ -277,17 +282,18 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_OBJC_WEAK = YES;
-				CODE_SIGN_IDENTITY = "";
+				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = HZ7L6K5VDQ;
 				INFOPLIST_FILE = PhotoFrameRemote/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Photo Frame Manager";
+				INFOPLIST_KEY_CFBundleDisplayName = FancyFrame;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
-				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MARKETING_VERSION = 1;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.photo-frame.PhotoFrameRemote";
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = FancyFrame;
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_VERSION = 6.0;
@@ -307,7 +313,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		100000000000000000000021 /* Build configuration list for PBXNativeTarget "PhotoFrameRemote" */ = {
+		100000000000000000000021 /* Build configuration list for PBXNativeTarget "FancyFrame" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				100000000000000000000032 /* Debug */,

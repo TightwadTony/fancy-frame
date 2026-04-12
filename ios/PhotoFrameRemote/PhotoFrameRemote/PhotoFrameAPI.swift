@@ -55,6 +55,24 @@ struct PhotoCount: Decodable {
     let count: Int
 }
 
+struct PhotoFramePhoto: Codable, Identifiable, Hashable {
+    let filename: String
+    let version: String
+    let thumbnailURL: URL?
+
+    var id: String { filename }
+
+    enum CodingKeys: String, CodingKey {
+        case filename
+        case version
+        case thumbnailURL = "thumbnail_url"
+    }
+}
+
+private struct PhotoList: Decodable {
+    let photos: [PhotoFramePhoto]
+}
+
 // MARK: - API Client
 
 enum APIError: LocalizedError {
@@ -126,9 +144,49 @@ struct PhotoFrameAPI {
         try await patch("api/config", body: config)
     }
 
+    func fetchPhotoList() async throws -> [PhotoFramePhoto] {
+        let result: PhotoList = try await get("api/photos/list")
+        return result.photos
+    }
+
+    func photoURL(filename: String, version: String? = nil, thumbnail: Bool = false) -> URL? {
+        guard let encoded = filename.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
+            return nil
+        }
+        var components = URLComponents(url: baseURL.appendingPathComponent("api/photos/")
+            .appendingPathComponent(encoded), resolvingAgainstBaseURL: false)
+        var queryItems: [URLQueryItem] = []
+        if thumbnail {
+            queryItems.append(URLQueryItem(name: "thumbnail", value: "1"))
+        }
+        if let version {
+            queryItems.append(URLQueryItem(name: "version", value: version))
+        }
+        if !queryItems.isEmpty {
+            components?.queryItems = queryItems
+        }
+        return components?.url
+    }
+
     func fetchPhotoCount() async throws -> Int {
         let result: PhotoCount = try await get("api/photos")
         return result.count
+    }
+
+    func deletePhoto(filename: String) async throws {
+        guard let encoded = filename.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
+            throw APIError.validationError(["Invalid filename"])
+        }
+        let url = baseURL.appendingPathComponent("api/photos/")
+            .appendingPathComponent(encoded)
+        var req = URLRequest(url: url)
+        req.httpMethod = "DELETE"
+
+        let (_, response) = try await session.data(for: req)
+        guard let http = response as? HTTPURLResponse,
+              (200..<300).contains(http.statusCode) else {
+            throw APIError.httpError((response as? HTTPURLResponse)?.statusCode ?? 0)
+        }
     }
 
     func uploadPhoto(_ jpegData: Data, filename: String) async throws {

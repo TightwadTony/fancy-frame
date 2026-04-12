@@ -15,8 +15,8 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "100000000000000000000010"
-               BuildableName = "PhotoFrameRemote.app"
-               BlueprintName = "PhotoFrameRemote"
+               BuildableName = "FancyFrame.app"
+               BlueprintName = "FancyFrame"
                ReferencedContainer = "container:PhotoFrameRemote.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -46,8 +46,8 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "100000000000000000000010"
-            BuildableName = "PhotoFrameRemote.app"
-            BlueprintName = "PhotoFrameRemote"
+            BuildableName = "FancyFrame.app"
+            BlueprintName = "FancyFrame"
             ReferencedContainer = "container:PhotoFrameRemote.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -74,8 +74,8 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "100000000000000000000010"
-            BuildableName = "PhotoFrameRemote.app"
-            BlueprintName = "PhotoFrameRemote"
+            BuildableName = "FancyFrame.app"
+            BlueprintName = "FancyFrame"
             ReferencedContainer = "container:PhotoFrameRemote.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>

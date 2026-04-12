@@ -3,13 +3,13 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDisplayName</key>
-	<string>Photo Frame Remote</string>
+	<string>FancyFrame</string>
 	<key>CFBundleExecutable</key>
-	<string>PhotoFrameRemote</string>
+	<string>FancyFrame</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.photo-frame.PhotoFrameRemote</string>
 	<key>CFBundleName</key>
-	<string>Photo Frame Remote</string>
+	<string>FancyFrame</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -23,7 +23,7 @@
 		<string>_photoframe._tcp</string>
 	</array>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Photo Frame Remote needs access to your local network to discover and manage photo frames.</string>
+	<string>FancyFrame needs access to your local network to discover and manage photo frames.</string>
 	<key>UIStatusBarStyle</key>
 	<string></string>
 	<key>UISupportedInterfaceOrientations</key>

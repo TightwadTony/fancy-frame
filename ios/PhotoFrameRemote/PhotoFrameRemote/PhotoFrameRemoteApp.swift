@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct PhotoFrameRemoteApp: App {
+struct FancyFrameApp: App {
     @State private var discovery = DeviceDiscovery()
 
     var body: some Scene {

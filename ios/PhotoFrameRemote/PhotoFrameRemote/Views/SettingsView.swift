@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     let frame: PhotoFrame
+    @Environment(\.dismiss) private var dismiss
 
     @State private var config: PhotoFrameConfig = .default
     @State private var isLoading   = true
@@ -14,24 +15,48 @@ struct SettingsView: View {
     private var hasChanges: Bool { config != savedConfig }
 
     var body: some View {
-        Form {
-            if isLoading {
-                Section {
-                    HStack {
-                        Spacer()
-                        ProgressView("Loading…")
-                        Spacer()
-                    }
-                    .padding(.vertical)
+        VStack(spacing: 0) {
+            HStack {
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.headline.weight(.semibold))
+                        .frame(width: 40, height: 40)
+                        .background(Color(.secondarySystemGroupedBackground))
+                        .clipShape(Circle())
                 }
-            } else {
-                slideshowSection
-                kenBurnsSection
-                restartSection
+                Spacer()
+                Text("Settings")
+                    .font(.title2.bold())
+                Spacer()
+                Color.clear
+                    .frame(width: 40, height: 40)
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 0)
+            .padding(.bottom, 6)
+            .background(Color(.systemGroupedBackground).ignoresSafeArea(edges: .top))
+
+            Form {
+                if isLoading {
+                    Section {
+                        HStack {
+                            Spacer()
+                            ProgressView("Loading…")
+                            Spacer()
+                        }
+                        .padding(.vertical)
+                    }
+                } else {
+                    slideshowSection
+                    kenBurnsSection
+                    restartSection
+                }
             }
         }
-        .navigationTitle("Settings")
-        .navigationBarTitleDisplayMode(.large)
+        .background(Color(.systemGroupedBackground).ignoresSafeArea())
+        .toolbar(.hidden, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .bottomBar) {
                 if hasChanges {

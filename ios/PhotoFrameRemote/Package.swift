@@ -2,17 +2,17 @@
 import PackageDescription
 
 let package = Package(
-    name: "PhotoFrameRemote",
-    platforms: [.iOS(.v18)],
+    name: "FancyFrame",
+    platforms: [.iOS(.v17)],
     products: [
         .executable(
-            name: "PhotoFrameRemote",
-            targets: ["PhotoFrameRemote"]
+            name: "FancyFrame",
+            targets: ["FancyFrame"]
         )
     ],
     targets: [
         .executableTarget(
-            name: "PhotoFrameRemote",
+            name: "FancyFrame",
             path: "PhotoFrameRemote"
         )
     ]

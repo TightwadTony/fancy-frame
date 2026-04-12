@@ -6,42 +6,46 @@ struct DeviceListView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                HStack(alignment: .center) {
-                    Text("Photo Frames")
-                        .font(.largeTitle.bold())
+                HStack {
+                    Text("FancyFrames")
+                        .font(.title2.bold())
                     Spacer()
                     if discovery.isSearching {
                         ProgressView()
-                            .scaleEffect(0.35)
-                            .frame(width: 20, height: 20)
+                            .scaleEffect(0.8)
                     } else {
                         Button {
                             discovery.rescan()
                         } label: {
                             Image(systemName: "arrow.clockwise")
+                                .font(.headline)
                         }
                     }
                 }
-                .padding(.horizontal)
-                .padding(.bottom, 4)
-                .background(Color(.systemGroupedBackground))
+                .padding(.horizontal, 12)
+                .padding(.top, 0)
+                .padding(.bottom, 6)
+                .background(Color(.systemGroupedBackground).ignoresSafeArea(edges: .top))
 
-                if discovery.frames.isEmpty {
-                    EmptyStateView(isSearching: discovery.isSearching) {
-                        discovery.rescan()
-                    }
-                } else {
-                    List(discovery.frames) { frame in
-                        NavigationLink {
-                            DeviceDetailView(frame: frame)
-                        } label: {
-                            FrameRowView(frame: frame)
+                Group {
+                    if discovery.frames.isEmpty {
+                        EmptyStateView(isSearching: discovery.isSearching) {
+                            discovery.rescan()
                         }
+                    } else {
+                        List(discovery.frames) { frame in
+                            NavigationLink {
+                                DeviceDetailView(frame: frame)
+                            } label: {
+                                FrameRowView(frame: frame)
+                            }
+                        }
+                        .listStyle(.insetGrouped)
                     }
-                    .listStyle(.insetGrouped)
                 }
             }
-            .navigationBarHidden(true)
+            .background(Color(.systemGroupedBackground).ignoresSafeArea())
+            .toolbar(.hidden, for: .navigationBar)
         }
     }
 }
@@ -101,10 +105,10 @@ private struct EmptyStateView: View {
                 .font(.system(size: 64))
                 .foregroundStyle(.quaternary)
 
-            Text("No Frames Found")
+            Text("No FancyFrames Found")
                 .font(.title2.bold())
 
-            Text("Make sure your iPhone and photo frames\nare on the same Wi-Fi network.\nFrames must not be in setup mode.")
+            Text("Make sure your iPhone and FancyFrames\nare on the same Wi-Fi network.\nFancyFrames must not be in setup mode.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
