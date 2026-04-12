@@ -2,6 +2,7 @@ import SwiftUI
 
 struct DeviceDetailView: View {
     let frame: PhotoFrame
+    @Environment(\.statusBarHeight) private var statusBarHeight
     @Environment(\.dismiss) private var dismiss
 
     @State private var config: PhotoFrameConfig?
@@ -13,104 +14,99 @@ struct DeviceDetailView: View {
     private let refreshTimer = Timer.publish(every: 5, on: .main, in: .common).autoconnect()
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Button {
-                    dismiss()
-                } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.headline.weight(.semibold))
-                        .frame(width: 40, height: 40)
-                        .background(Color(.secondarySystemGroupedBackground))
-                        .clipShape(Circle())
-                }
-                Spacer()
-                Text(frame.name)
-                    .font(.title2.bold())
-                    .lineLimit(1)
-                Spacer()
-                Color.clear
-                    .frame(width: 40, height: 40)
-            }
-            .padding(.horizontal, 12)
-            .padding(.top, 0)
-            .padding(.bottom, 6)
-            .background(Color(.systemGroupedBackground).ignoresSafeArea(edges: .top))
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    if isLoading {
-                        HStack {
-                            Spacer()
-                            ProgressView("Loading…")
-                            Spacer()
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                // Back button header
+                HStack {
+                    Button { dismiss() } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.left")
+                                .fontWeight(.semibold)
+                            Text("Back")
                         }
-                        .padding(.vertical, 20)
-                    } else {
-                        VStack(alignment: .leading, spacing: 10) {
-                            HStack(spacing: 12) {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    if let info {
-                                        Label(info.ipAddress ?? frame.host ?? "—", systemImage: "network")
-                                            .font(.subheadline)
-                                            .foregroundStyle(.secondary)
-                                        Label("Up \(info.uptimeFormatted)", systemImage: "clock")
-                                            .font(.subheadline)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    Label(photoCount.map { "\($0) photo\($0 == 1 ? "" : "s")" } ?? "— photos",
-                                          systemImage: "photo.stack")
+                        .font(.body)
+                    }
+                    Spacer()
+                    Text(frame.name)
+                        .font(.headline)
+                    Spacer()
+                    // balance chevron width
+                    Color.clear.frame(width: 60, height: 1)
+                }
+                .padding(.horizontal, 12)
+
+                if isLoading {
+                    HStack {
+                        Spacer()
+                        ProgressView("Loading…")
+                        Spacer()
+                    }
+                    .padding(.vertical, 20)
+                } else {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(spacing: 12) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                if let info {
+                                    Label(info.ipAddress ?? frame.host ?? "—", systemImage: "network")
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                    Label("Up \(info.uptimeFormatted)", systemImage: "clock")
                                         .font(.subheadline)
                                         .foregroundStyle(.secondary)
                                 }
-                                Spacer()
-                                statusBadge
+                                Label(photoCount.map { "\($0) photo\($0 == 1 ? "" : "s")" } ?? "— photos",
+                                      systemImage: "photo.stack")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
                             }
-
-                            if let config {
-                                Text(settingsSummary(config))
-                                    .font(.caption)
-                                    .foregroundStyle(.tertiary)
-                            }
+                            Spacer()
+                            statusBadge
                         }
-                        .padding(14)
-                        .background(Color(.secondarySystemGroupedBackground))
-                        .clipShape(RoundedRectangle(cornerRadius: 16))
 
-                        VStack(spacing: 10) {
-                            NavigationLink {
-                                PhotosView(frame: frame)
-                            } label: {
-                                Label("Manage Photos", systemImage: "photo.on.rectangle.angled")
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.horizontal, 14)
-                                    .padding(.vertical, 12)
-                                    .background(Color(.secondarySystemGroupedBackground))
-                                    .clipShape(RoundedRectangle(cornerRadius: 16))
-                            }
-                            .buttonStyle(.plain)
-
-                            NavigationLink {
-                                SettingsView(frame: frame)
-                            } label: {
-                                Label("Settings", systemImage: "slider.horizontal.3")
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.horizontal, 14)
-                                    .padding(.vertical, 12)
-                                    .background(Color(.secondarySystemGroupedBackground))
-                                    .clipShape(RoundedRectangle(cornerRadius: 16))
-                            }
-                            .buttonStyle(.plain)
+                        if let config {
+                            Text(settingsSummary(config))
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
                         }
                     }
+                    .padding(14)
+                    .background(Color(.secondarySystemGroupedBackground))
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+
+                    VStack(spacing: 10) {
+                        NavigationLink {
+                            PhotosView(frame: frame)
+                        } label: {
+                            Label("Manage Photos", systemImage: "photo.on.rectangle.angled")
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 12)
+                                .background(Color(.secondarySystemGroupedBackground))
+                                .clipShape(RoundedRectangle(cornerRadius: 16))
+                        }
+                        .buttonStyle(.plain)
+
+                        NavigationLink {
+                            SettingsView(frame: frame)
+                        } label: {
+                            Label("Settings", systemImage: "slider.horizontal.3")
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 12)
+                                .background(Color(.secondarySystemGroupedBackground))
+                                .clipShape(RoundedRectangle(cornerRadius: 16))
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
-                .padding(.horizontal, 12)
-                .padding(.top, 0)
-                .padding(.bottom, 12)
             }
+            .padding(.top, statusBarHeight + 8)
+            .padding(.horizontal, 12)
+            .padding(.bottom, 12)
         }
-        .background(Color(.systemGroupedBackground).ignoresSafeArea())
+        .ignoresSafeArea(edges: .top)
         .toolbar(.hidden, for: .navigationBar)
+        .fancyFrameScreenBackground()
         .alert("Error", isPresented: .constant(error != nil), actions: {
             Button("OK") { error = nil }
         }, message: {

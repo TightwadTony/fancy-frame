@@ -2,50 +2,59 @@ import SwiftUI
 
 struct DeviceListView: View {
     @Environment(DeviceDiscovery.self) private var discovery
+    @Environment(\.statusBarHeight) private var statusBarHeight
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                HStack {
-                    Text("FancyFrames")
-                        .font(.title2.bold())
-                    Spacer()
-                    if discovery.isSearching {
-                        ProgressView()
-                            .scaleEffect(0.8)
-                    } else {
-                        Button {
-                            discovery.rescan()
-                        } label: {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.headline)
-                        }
-                    }
-                }
-                .padding(.horizontal, 12)
-                .padding(.top, 0)
-                .padding(.bottom, 6)
-                .background(Color(.systemGroupedBackground).ignoresSafeArea(edges: .top))
-
-                Group {
-                    if discovery.frames.isEmpty {
-                        EmptyStateView(isSearching: discovery.isSearching) {
-                            discovery.rescan()
-                        }
-                    } else {
-                        List(discovery.frames) { frame in
-                            NavigationLink {
-                                DeviceDetailView(frame: frame)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Text("FancyFrames")
+                            .font(.title2.bold())
+                        Spacer()
+                        if discovery.isSearching {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                        } else {
+                            Button {
+                                discovery.rescan()
                             } label: {
-                                FrameRowView(frame: frame)
+                                Image(systemName: "arrow.clockwise")
+                                    .font(.headline)
                             }
                         }
-                        .listStyle(.insetGrouped)
+                    }
+                    .padding(.horizontal, 12)
+
+                    if discovery.frames.isEmpty {
+                        EmptyStateView()
+                    } else {
+                        LazyVStack(spacing: 10) {
+                            ForEach(discovery.frames) { frame in
+                                NavigationLink {
+                                    DeviceDetailView(frame: frame)
+                                } label: {
+                                    FrameRowView(frame: frame)
+                                        .padding(.horizontal, 14)
+                                        .padding(.vertical, 12)
+                                        .background(Color(.secondarySystemGroupedBackground))
+                                        .clipShape(RoundedRectangle(cornerRadius: 18))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.horizontal, 12)
                     }
                 }
+                .padding(.top, statusBarHeight + 8)
+                .padding(.bottom, 12)
             }
-            .background(Color(.systemGroupedBackground).ignoresSafeArea())
+            .ignoresSafeArea(edges: .top)
+            .refreshable {
+                discovery.rescan()
+            }
             .toolbar(.hidden, for: .navigationBar)
+            .fancyFrameScreenBackground()
         }
     }
 }
@@ -95,12 +104,8 @@ private struct FrameRowView: View {
 // MARK: - Empty State
 
 private struct EmptyStateView: View {
-    let isSearching: Bool
-    let onRescan: () -> Void
-
     var body: some View {
         VStack(spacing: 16) {
-            Spacer()
             Image(systemName: "antenna.radiowaves.left.and.right")
                 .font(.system(size: 64))
                 .foregroundStyle(.quaternary)
@@ -113,17 +118,10 @@ private struct EmptyStateView: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
 
-            if isSearching {
-                ProgressView()
-                    .padding(.top, 4)
-            } else {
-                Button("Scan Again", action: onRescan)
-                    .buttonStyle(.bordered)
-                    .controlSize(.large)
-                    .padding(.top, 4)
-            }
             Spacer()
         }
         .padding(.horizontal, 40)
+        .padding(.top, 24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 }

@@ -4,6 +4,7 @@ import UIKit
 
 struct PhotosView: View {
     let frame: PhotoFrame
+    @Environment(\.statusBarHeight) private var statusBarHeight
     @Environment(\.dismiss) private var dismiss
 
     @State private var photoCount: Int?
@@ -19,44 +20,37 @@ struct PhotosView: View {
     @StateObject private var thumbnailCache = ThumbnailCache()
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Button {
-                    dismiss()
-                } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.headline.weight(.semibold))
-                        .frame(width: 40, height: 40)
-                        .background(Color(.secondarySystemGroupedBackground))
-                        .clipShape(Circle())
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                // Back button + title + upload button header
+                HStack {
+                    Button { dismiss() } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.left")
+                                .fontWeight(.semibold)
+                            Text("Back")
+                        }
+                        .font(.body)
+                    }
+                    Spacer()
+                    Text("Photos")
+                        .font(.headline)
+                    Spacer()
+                    Button {
+                        showPicker = true
+                    } label: {
+                        if isUploading {
+                            ProgressView().scaleEffect(0.85)
+                        } else {
+                            Image(systemName: "plus")
+                                .font(.body.weight(.semibold))
+                        }
+                    }
+                    .disabled(isUploading || isDeleting)
                 }
-                Spacer()
-                Text("Photos")
-                    .font(.title2.bold())
-                Spacer()
-                Color.clear
-                    .frame(width: 40, height: 40)
-            }
-            .padding(.horizontal, 12)
-            .padding(.top, 0)
-            .padding(.bottom, 6)
-            .background(Color(.systemGroupedBackground).ignoresSafeArea(edges: .top))
+                .padding(.horizontal, 12)
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    compactInfoCard
-
-                Button {
-                    showPicker = true
-                } label: {
-                    Label("Add Photos", systemImage: "plus.circle")
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 12)
-                }
-                .background(Color(.secondarySystemGroupedBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 16))
-                .disabled(isUploading || isDeleting)
+                compactInfoCard
 
                 if !photos.isEmpty {
                     LazyVGrid(
@@ -102,13 +96,14 @@ struct PhotosView: View {
                     }
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.top, 8)
-            .padding(.bottom, selectedPhotos.isEmpty ? 8 : 70)
-            }
         }
-        .background(Color(.systemGroupedBackground).ignoresSafeArea())
+        .contentMargins(.top, statusBarHeight + 8, for: .scrollContent)
+        .contentMargins(.bottom, selectedPhotos.isEmpty ? 8 : 70, for: .scrollContent)
+        .contentMargins(.leading, 12, for: .scrollContent)
+        .contentMargins(.trailing, 12, for: .scrollContent)
+        .ignoresSafeArea(edges: .top)
         .toolbar(.hidden, for: .navigationBar)
+        .fancyFrameScreenBackground()
         .sheet(isPresented: $showPicker) {
             PhotoPicker { selections in
                 showPicker = false

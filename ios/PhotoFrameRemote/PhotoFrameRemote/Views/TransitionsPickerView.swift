@@ -2,6 +2,7 @@ import SwiftUI
 
 struct TransitionsPickerView: View {
     @Binding var selected: [String]
+    @Environment(\.statusBarHeight) private var statusBarHeight
     @Environment(\.dismiss) private var dismiss
 
     private let allTransitions: [(id: String, label: String, description: String)] = [
@@ -11,66 +12,62 @@ struct TransitionsPickerView: View {
     ]
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Button {
-                    dismiss()
-                } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.headline.weight(.semibold))
-                        .frame(width: 40, height: 40)
-                        .background(Color(.secondarySystemGroupedBackground))
-                        .clipShape(Circle())
-                }
-                Spacer()
-                Text("Transitions")
-                    .font(.title2.bold())
-                Spacer()
-                Color.clear
-                    .frame(width: 40, height: 40)
-            }
-            .padding(.horizontal, 12)
-            .padding(.top, 0)
-            .padding(.bottom, 6)
-            .background(Color(.systemGroupedBackground).ignoresSafeArea(edges: .top))
-
-            Form {
-                Section {
-                    ForEach(allTransitions, id: \.id) { transition in
-                        Button {
-                            toggle(transition.id)
-                        } label: {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(transition.label)
-                                        .font(.body)
-                                        .foregroundStyle(.primary)
-                                    Text(transition.description)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                if selected.contains(transition.id) {
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .foregroundStyle(.tint)
-                                        .font(.title3)
-                                } else {
-                                    Image(systemName: "circle")
-                                        .foregroundStyle(.tertiary)
-                                        .font(.title3)
-                                }
-                            }
-                            .contentShape(Rectangle())
+        Form {
+            Section {
+                HStack {
+                    Button { dismiss() } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.left").fontWeight(.semibold)
+                            Text("Back")
                         }
-                        .buttonStyle(.plain)
+                        .font(.body)
                     }
-                } footer: {
-                    Text("At least one transition must remain selected.")
+                    Spacer()
+                    Text("Transitions").font(.headline)
+                    Spacer()
+                    Color.clear.frame(width: 60, height: 1)
                 }
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
+            }
+            Section {
+                ForEach(allTransitions, id: \.id) { transition in
+                    Button {
+                        toggle(transition.id)
+                    } label: {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(transition.label)
+                                    .font(.body)
+                                    .foregroundStyle(.primary)
+                                Text(transition.description)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            if selected.contains(transition.id) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(.tint)
+                                    .font(.title3)
+                            } else {
+                                Image(systemName: "circle")
+                                    .foregroundStyle(.tertiary)
+                                    .font(.title3)
+                            }
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            } footer: {
+                Text("At least one transition must remain selected.")
             }
         }
-        .background(Color(.systemGroupedBackground).ignoresSafeArea())
+        .contentMargins(.top, statusBarHeight, for: .scrollContent)
+        .ignoresSafeArea(edges: .top)
         .toolbar(.hidden, for: .navigationBar)
+        .scrollContentBackground(.hidden)
+        .fancyFrameScreenBackground()
     }
 
     private func toggle(_ id: String) {

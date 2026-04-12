@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     let frame: PhotoFrame
+    @Environment(\.statusBarHeight) private var statusBarHeight
     @Environment(\.dismiss) private var dismiss
 
     @State private var config: PhotoFrameConfig = .default
@@ -15,48 +16,44 @@ struct SettingsView: View {
     private var hasChanges: Bool { config != savedConfig }
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Button {
-                    dismiss()
-                } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.headline.weight(.semibold))
-                        .frame(width: 40, height: 40)
-                        .background(Color(.secondarySystemGroupedBackground))
-                        .clipShape(Circle())
-                }
-                Spacer()
-                Text("Settings")
-                    .font(.title2.bold())
-                Spacer()
-                Color.clear
-                    .frame(width: 40, height: 40)
-            }
-            .padding(.horizontal, 12)
-            .padding(.top, 0)
-            .padding(.bottom, 6)
-            .background(Color(.systemGroupedBackground).ignoresSafeArea(edges: .top))
-
-            Form {
-                if isLoading {
-                    Section {
-                        HStack {
-                            Spacer()
-                            ProgressView("Loading…")
-                            Spacer()
+        Form {
+            Section {
+                HStack {
+                    Button { dismiss() } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.left").fontWeight(.semibold)
+                            Text("Back")
                         }
-                        .padding(.vertical)
+                        .font(.body)
                     }
-                } else {
-                    slideshowSection
-                    kenBurnsSection
-                    restartSection
+                    Spacer()
+                    Text("Settings").font(.headline)
+                    Spacer()
+                    Color.clear.frame(width: 60, height: 1)
                 }
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
+            }
+            if isLoading {
+                Section {
+                    HStack {
+                        Spacer()
+                        ProgressView("Loading…")
+                        Spacer()
+                    }
+                    .padding(.vertical)
+                }
+            } else {
+                slideshowSection
+                kenBurnsSection
+                restartSection
             }
         }
-        .background(Color(.systemGroupedBackground).ignoresSafeArea())
+        .contentMargins(.top, statusBarHeight, for: .scrollContent)
+        .ignoresSafeArea(edges: .top)
         .toolbar(.hidden, for: .navigationBar)
+        .scrollContentBackground(.hidden)
+        .fancyFrameScreenBackground()
         .toolbar {
             ToolbarItem(placement: .bottomBar) {
                 if hasChanges {
