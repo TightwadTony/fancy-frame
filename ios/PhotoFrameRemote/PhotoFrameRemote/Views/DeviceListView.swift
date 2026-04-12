@@ -8,21 +8,15 @@ struct DeviceListView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
-                    HStack {
+                    HStack(alignment: .center) {
                         Text("FancyFrames")
-                            .font(.title2.bold())
+                            .font(.custom("Snell Roundhand", size: 32).weight(.bold))
                         Spacer()
-                        if discovery.isSearching {
-                            ProgressView()
-                                .scaleEffect(0.8)
-                        } else {
-                            Button {
-                                discovery.rescan()
-                            } label: {
-                                Image(systemName: "arrow.clockwise")
-                                    .font(.headline)
-                            }
-                        }
+                        Image("AppIconImage")
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 44, height: 44)
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
                     }
                     .padding(.horizontal, 12)
 
