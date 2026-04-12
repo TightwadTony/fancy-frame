@@ -10,21 +10,35 @@ Advertised via Avahi mDNS as _photoframe._tcp so iOS clients can discover it.
 
 from __future__ import annotations
 
+import io
+import logging
 import os
 import re
 import socket
 import subprocess
+import threading
 import time
 import uuid
 from pathlib import Path
+from urllib.parse import quote
 from werkzeug.utils import secure_filename
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_file, send_from_directory
+
+try:
+    from PIL import Image, ImageOps
+except ImportError:  # pragma: no cover
+    Image = None  # type: ignore[misc]
+    ImageOps = None  # type: ignore[misc]
 
 app = Flask(__name__)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
+logger = logging.getLogger('photo-frame-api')
 
 CONFIG_FILE = Path('/srv/photos/photo-frame.conf')
 PHOTOS_DIR  = Path('/srv/photos')
+THUMBNAIL_CACHE_DIR = Path('/var/lib/photo-frame/thumb-cache')
+THUMBNAIL_LOCK = threading.Semaphore(1)
 
 VALID_TRANSITIONS = {'crossfade', 'fade_to_black', 'wipe'}
 VALID_IMAGE_EXTS  = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tif', '.tiff'}
@@ -37,6 +51,8 @@ CONFIG_DEFAULTS: dict[str, str] = {
     'ken_burns_zoom_min': '1.02',
     'ken_burns_zoom_max': '1.20',
 }
+
+THUMBNAIL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 # ---------------------------------------------------------------------------
 # Config helpers
@@ -282,6 +298,168 @@ def upload_photo():
     os.chmod(dest, 0o666)
 
     return jsonify({'filename': dest.name}), 201
+
+
+def _sanitize_photo_filename(filename: str) -> str | None:
+    """Return a validated basename for a photo filename or None if invalid."""
+    if not filename or filename != Path(filename).name:
+        return None
+    if filename.startswith('.') or filename.startswith('._'):
+        return None
+    if Path(filename).suffix.lower() not in VALID_IMAGE_EXTS:
+        return None
+    return filename
+
+
+def _thumbnail_cache_path(photo_path: Path, max_size: tuple[int, int]) -> Path:
+    stat = photo_path.stat()
+    key = f"{photo_path.stem}_{stat.st_mtime_ns}_{stat.st_size}_{max_size[0]}x{max_size[1]}.jpg"
+    return THUMBNAIL_CACHE_DIR / secure_filename(key)
+
+
+def _create_thumbnail(photo_path: Path, max_size: tuple[int, int] = (120, 120)) -> bytes | None:
+    if Image is None:
+        logger.warning('Pillow not available; cannot generate thumbnail for %s', photo_path.name)
+        return None
+
+    cache_path = _thumbnail_cache_path(photo_path, max_size)
+    try:
+        if cache_path.exists():
+            return cache_path.read_bytes()
+    except OSError:
+        logger.warning('Could not read cached thumbnail for %s', photo_path.name)
+
+    try:
+        with THUMBNAIL_LOCK:
+            if cache_path.exists():
+                return cache_path.read_bytes()
+
+            start = time.monotonic()
+            with Image.open(photo_path) as image:
+                image_format = getattr(image, 'format', 'unknown')
+                if image_format == 'JPEG':
+                    image.draft('RGB', max_size)
+                logger.info(
+                    'Generating thumbnail for %s format=%s mode=%s size=%sx%s',
+                    photo_path.name,
+                    image_format,
+                    getattr(image, 'mode', 'unknown'),
+                    image.size[0],
+                    image.size[1],
+                )
+                if ImageOps is not None:
+                    image = ImageOps.exif_transpose(image)
+                image.thumbnail(max_size, Image.LANCZOS)
+                if image.mode != 'RGB':
+                    image = image.convert('RGB')
+                output = io.BytesIO()
+                image.save(output, format='JPEG', quality=50, optimize=True)
+                data = output.getvalue()
+
+            try:
+                cache_path.write_bytes(data)
+            except OSError:
+                logger.warning('Could not write cached thumbnail for %s', photo_path.name)
+
+            elapsed_ms = int((time.monotonic() - start) * 1000)
+            logger.info(
+                'Thumbnail ready for %s -> %sx%s in %dms (%d bytes)',
+                photo_path.name,
+                image.size[0],
+                image.size[1],
+                elapsed_ms,
+                len(data),
+            )
+            return data
+    except Exception:
+        logger.exception('Thumbnail generation failed for %s', photo_path.name)
+        return None
+
+
+def _serve_photo(photo_path: Path, thumbnail: bool = False):
+    if thumbnail:
+        data = _create_thumbnail(photo_path)
+        if data is not None:
+            return send_file(io.BytesIO(data), mimetype='image/jpeg', as_attachment=False)
+        logger.warning('Falling back to original image for %s after thumbnail failure', photo_path.name)
+    return send_from_directory(PHOTOS_DIR, photo_path.name)
+
+
+def _make_photo_url(filename: str, thumbnail: bool = False, version: str | None = None) -> str:
+    root = request.url_root.rstrip('/')
+    encoded = quote(filename, safe='')
+    url = f"{root}/api/photos/{encoded}"
+    query: list[str] = []
+    if thumbnail:
+        query.append('thumbnail=1')
+    if version is not None:
+        query.append(f"version={quote(version, safe='')}")
+    if query:
+        url += '?' + '&'.join(query)
+    return url
+
+
+@app.route('/api/photos/list')
+def get_photo_list():
+    """Return a list of photo filenames currently stored in the photos directory."""
+    try:
+        photos = []
+        for f in sorted(PHOTOS_DIR.iterdir(), key=lambda path: path.name):
+            if not f.is_file() or f.suffix.lower() not in VALID_IMAGE_EXTS:
+                continue
+            if f.name.startswith('.') or f.name.startswith('._'):
+                continue
+            stat = f.stat()
+            version = f"{stat.st_mtime_ns}-{stat.st_size}"
+            photos.append({
+                'filename': f.name,
+                'version': version,
+                'thumbnail_url': _make_photo_url(f.name, thumbnail=True, version=version),
+            })
+    except OSError:
+        photos = []
+    return jsonify({'photos': photos})
+
+
+@app.route('/api/photos/<path:filename>')
+def get_photo(filename: str):
+    safe_name = _sanitize_photo_filename(filename)
+    if not safe_name:
+        logger.warning('Rejected invalid photo request filename=%r from %s', filename, request.remote_addr)
+        return jsonify({'error': 'Invalid filename'}), 400
+
+    photo_path = PHOTOS_DIR / safe_name
+    if not photo_path.exists() or not photo_path.is_file():
+        logger.warning('Photo not found filename=%s from %s', safe_name, request.remote_addr)
+        return jsonify({'error': 'Not found'}), 404
+
+    thumbnail = request.args.get('thumbnail', '').lower() in ('1', 'true', 'yes')
+    logger.info(
+        'Serving photo filename=%s thumbnail=%s version=%s from=%s',
+        safe_name,
+        thumbnail,
+        request.args.get('version', ''),
+        request.remote_addr,
+    )
+    return _serve_photo(photo_path, thumbnail=thumbnail)
+
+
+@app.route('/api/photos/<path:filename>', methods=['DELETE'])
+def delete_photo(filename: str):
+    safe_name = _sanitize_photo_filename(filename)
+    if not safe_name:
+        return jsonify({'error': 'Invalid filename'}), 400
+
+    photo_path = PHOTOS_DIR / safe_name
+    if not photo_path.exists() or not photo_path.is_file():
+        return jsonify({'error': 'Not found'}), 404
+
+    try:
+        photo_path.unlink()
+    except OSError:
+        return jsonify({'error': 'Could not delete file'}), 500
+
+    return jsonify({'status': 'deleted'}), 200
 
 
 @app.route('/api/restart', methods=['POST'])
