@@ -35,10 +35,11 @@ app = Flask(__name__)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 logger = logging.getLogger('photo-frame-api')
 
-CONFIG_FILE = Path('/srv/photos/photo-frame.conf')
-PHOTOS_DIR  = Path('/srv/photos')
+CONFIG_FILE    = Path('/srv/photos/photo-frame.conf')
+PHOTOS_DIR     = Path('/srv/photos')
 THUMBNAIL_CACHE_DIR = Path('/var/lib/photo-frame/thumb-cache')
-SMB_CONF    = Path('/etc/samba/smb.conf')
+SMB_CONF       = Path('/etc/samba/smb.conf')
+SMB_SHARE_NAME = 'photos'
 THUMBNAIL_LOCK = threading.Semaphore(1)
 
 VALID_TRANSITIONS = {'crossfade', 'fade_to_black', 'wipe'}
@@ -497,9 +498,11 @@ def _read_samba_settings() -> dict:
     result: dict = {'guest_access': False, 'username': None}
     try:
         in_share = False
+        valid_users: str | None = None
+        force_user:  str | None = None
         for line in SMB_CONF.read_text().splitlines():
             stripped = line.strip()
-            if re.match(r'^\[photos\]\s*$', stripped, re.IGNORECASE):
+            if re.match(rf'^\[{re.escape(SMB_SHARE_NAME)}\]\s*$', stripped, re.IGNORECASE):
                 in_share = True
                 continue
             if in_share and stripped.startswith('['):
@@ -511,10 +514,13 @@ def _read_samba_settings() -> dict:
                 val = val.strip()
                 if key == 'guest ok' and val.lower() in ('yes', 'true', '1'):
                     result['guest_access'] = True
-                elif key == 'valid users' and not result['username']:
-                    result['username'] = val
-                elif key == 'force user' and not result['username']:
-                    result['username'] = val
+                elif key == 'valid users':
+                    valid_users = val
+                elif key == 'force user':
+                    force_user = val
+        # In credentials mode the login account is 'valid users';
+        # in guest mode there is no 'valid users' but 'force user' names the OS user.
+        result['username'] = valid_users or force_user
     except OSError:
         pass
     return result
@@ -530,7 +536,7 @@ def _write_samba_share(guest_access: bool, username: str) -> None:
     if guest_access:
         new_block = (
             '# BEGIN PHOTO-FRAME SHARE\n'
-            '[photos]\n'
+            f'[{SMB_SHARE_NAME}]\n'
             '   path = /srv/photos\n'
             '   browseable = yes\n'
             '   read only = no\n'
@@ -544,7 +550,7 @@ def _write_samba_share(guest_access: bool, username: str) -> None:
     else:
         new_block = (
             '# BEGIN PHOTO-FRAME SHARE\n'
-            '[photos]\n'
+            f'[{SMB_SHARE_NAME}]\n'
             '   path = /srv/photos\n'
             '   browseable = yes\n'
             '   read only = no\n'
@@ -575,7 +581,9 @@ def _write_samba_share(guest_access: bool, username: str) -> None:
                 flags=re.MULTILINE | re.IGNORECASE,
             )
     else:
-        text = re.sub(r'\n[ \t]*map to guest[ \t]*=[^\n]*', '', text, flags=re.IGNORECASE)
+        # Remove the whole line (including its trailing newline) to preserve formatting
+        text = re.sub(r'^[ \t]*map to guest[ \t]*=[^\n]*\n?', '', text,
+                      flags=re.MULTILINE | re.IGNORECASE)
 
     SMB_CONF.write_text(text)
 
@@ -583,10 +591,13 @@ def _write_samba_share(guest_access: bool, username: str) -> None:
 def _verify_samba_password(username: str, password: str) -> bool:
     """Return True if the given Samba password authenticates for username."""
     try:
+        env = os.environ.copy()
+        env['PASSWD'] = password
         result = subprocess.run(
-            ['smbclient', '//127.0.0.1/photos', '-U', f'{username}%{password}', '-c', 'quit'],
+            ['smbclient', f'//127.0.0.1/{SMB_SHARE_NAME}', '-U', username, '-c', 'quit'],
             capture_output=True,
             timeout=10,
+            env=env,
         )
         return result.returncode == 0
     except Exception:
@@ -652,9 +663,9 @@ def change_samba_password():
 
     try:
         _change_samba_password(username, new_password)
-    except RuntimeError as exc:
+    except RuntimeError:
         logger.exception('smbpasswd failed for user %s', username)
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': 'Failed to change password. Please try again.'}), 500
 
     return jsonify({'status': 'ok'})
 
@@ -684,9 +695,9 @@ def patch_samba():
     try:
         _write_samba_share(data['guest_access'], username)
         subprocess.run(['systemctl', 'reload', 'smbd'], check=True, timeout=10)
-    except Exception as exc:
+    except Exception:
         logger.exception('Failed to update Samba share configuration')
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': 'Failed to update share configuration. Please try again.'}), 500
 
     return jsonify(_read_samba_settings())
 
