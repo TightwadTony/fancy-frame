@@ -61,3 +61,4 @@ ehthumbs.db
 # Test/debug artifacts
 test_output/
 *.orig
+.aider*
