@@ -52,6 +52,7 @@ ssh photo@photo-frame
 cd ~/photo-frame
 sudo bash scripts/install_initial_setup.sh
 # The installer auto-detects your user and configures everything
+# The installer also prompts for a Fancy Frame display name (saved as frame_name in config)
 ```
 
 ### 4. Set SMB password
@@ -140,6 +141,7 @@ Slideshow behaviour:
 - Scans all files directly under `/srv/photos` (symlinks resolved by the installer)
 - New photos are picked up by periodic rescan (default 300 seconds)
 - Settings (slide duration, transitions, Ken Burns zoom range, etc.) are read from `/srv/photos/photo-frame.conf`, which is accessible via the same Samba share — edit it from any device on the network and changes take effect within 5 minutes
+- Set `frame_name` in `/srv/photos/photo-frame.conf` to control the name shown in the iPhone app device list/detail views
 
 ### Force onboarding mode (manual reconfiguration)
 
@@ -179,6 +181,7 @@ ssh photo@192.168.4.1
 - **Change AP SSID/password**: Edit `/etc/hostapd/hostapd.conf`
 - **Adjust slideshow delay**: Set `PHOTO_FRAME_SLIDE_SECONDS` (default 25)
 - **Adjust refresh interval for newly added photos**: Set `PHOTO_FRAME_REFRESH_SECONDS` (default 300)
+- **Set frame display name at install time**: Set `PHOTO_FRAME_NAME` before running installer (or enter it when prompted)
 - **Change share path**: Update `/srv/photos` references in `scripts/install_initial_setup.sh` (Samba section), then reinstall or reapply the Samba config block
 - **Add multiple Wi-Fi networks**: Manually edit `/etc/wpa_supplicant/wpa_supplicant.conf` with multiple network blocks
 
