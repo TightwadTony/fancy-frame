@@ -1,0 +1,57 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version label for the artifact (e.g. v1.0.0)'
+        required: false
+        default: 'dev'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            echo "version=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${{ github.event.inputs.version || 'dev' }}-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build artifact
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          ARTIFACT_NAME="photo-frame-${VERSION}"
+
+          mkdir -p "${ARTIFACT_NAME}"
+          cp -a api config portal scripts systemd "${ARTIFACT_NAME}/"
+
+          tar czf "${ARTIFACT_NAME}.tar.gz" "${ARTIFACT_NAME}"
+          echo "Built ${ARTIFACT_NAME}.tar.gz"
+          tar tzf "${ARTIFACT_NAME}.tar.gz" | head -20
+
+      - name: Upload artifact (workflow run)
+        uses: actions/upload-artifact@v4
+        with:
+          name: photo-frame-${{ steps.version.outputs.version }}
+          path: photo-frame-${{ steps.version.outputs.version }}.tar.gz
+          if-no-files-found: error
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: photo-frame-${{ steps.version.outputs.version }}.tar.gz
+          generate_release_notes: true

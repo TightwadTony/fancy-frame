@@ -33,23 +33,37 @@ Use **Raspberry Pi Imager** with these advanced settings:
 - **Configure Wi-Fi**: Optional; if skipped, onboarding mode will activate
 - **Wi-Fi country**: Set to your country code
 
-### 2. Copy project to Pi
+### 2. Download the latest release and copy to Pi
+
+Download the release artifact from the [Releases page](../../releases/latest) and copy it to the Pi:
 
 ```bash
 # On your development machine
-# (Replace 'photo' with your actual username if different)
-scp -r /path/to/photo-frame photo@photo-frame:~/photo-frame
+# Download the latest release
+curl -L https://github.com/TightwadTony/photo-frame/releases/latest/download/photo-frame-<version>.tar.gz \
+  -o photo-frame.tar.gz
 
-# Or clone directly
-# ssh photo@photo-frame
-# git clone <this-repo> ~/photo-frame
+# Copy to Pi (replace 'photo' with your actual username if different)
+scp photo-frame.tar.gz photo@photo-frame:~/
+
+# SSH in and extract
+ssh photo@photo-frame
+tar xzf photo-frame.tar.gz
+cd photo-frame-*/
+```
+
+Alternatively, download and extract directly on the Pi over SSH:
+
+```bash
+ssh photo@photo-frame
+curl -L https://github.com/TightwadTony/photo-frame/releases/latest/download/photo-frame-<version>.tar.gz \
+  | tar xz
+cd photo-frame-*/
 ```
 
 ### 3. Run installer
 
 ```bash
-ssh photo@photo-frame
-cd ~/photo-frame
 sudo bash scripts/install_initial_setup.sh
 # The installer auto-detects your user and configures everything
 # The installer also prompts for a Fancy Frame display name (saved as frame_name in config)
