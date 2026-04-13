@@ -35,29 +35,24 @@ Use **Raspberry Pi Imager** with these advanced settings:
 
 ### 2. Download the latest release and copy to Pi
 
-Download the release artifact from the [Releases page](../../releases/latest) and copy it to the Pi:
+Go to the [Releases page](../../releases/latest) to find the current version tag (e.g. `v1.2.0`), then download and extract directly on the Pi:
 
 ```bash
-# On your development machine
-# Download the latest release
-curl -L https://github.com/TightwadTony/photo-frame/releases/latest/download/photo-frame-<version>.tar.gz \
-  -o photo-frame.tar.gz
-
-# Copy to Pi (replace 'photo' with your actual username if different)
-scp photo-frame.tar.gz photo@photo-frame:~/
-
-# SSH in and extract
 ssh photo@photo-frame
-tar xzf photo-frame.tar.gz
-cd photo-frame-*/
+
+# Replace v1.2.0 with the actual version tag shown on the Releases page
+VERSION=v1.2.0
+curl -L "https://github.com/TightwadTony/photo-frame/releases/download/${VERSION}/photo-frame-${VERSION}.tar.gz" \
+  | tar xz
+cd "photo-frame-${VERSION}"
 ```
 
-Alternatively, download and extract directly on the Pi over SSH:
+Or use the GitHub CLI to download the latest release automatically:
 
 ```bash
 ssh photo@photo-frame
-curl -L https://github.com/TightwadTony/photo-frame/releases/latest/download/photo-frame-<version>.tar.gz \
-  | tar xz
+gh release download --repo TightwadTony/photo-frame --pattern 'photo-frame-*.tar.gz'
+tar xzf photo-frame-*.tar.gz
 cd photo-frame-*/
 ```
 
