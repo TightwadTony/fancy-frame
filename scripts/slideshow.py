@@ -367,6 +367,9 @@ _DEFAULT_CONFIG = """\
 # Edit this file to change slideshow behaviour.
 # Changes take effect within 5 minutes (the slideshow restarts automatically).
 
+# Friendly frame name displayed in the iPhone app
+frame_name = Photo Frame
+
 # Seconds each photo is displayed (including the transition)
 slide_seconds = 25
 
@@ -386,6 +389,7 @@ ken_burns_zoom_max = 1.20
 """
 
 _CONFIG_DEFAULTS = {
+    'frame_name':         'Photo Frame',
     'slide_seconds':      '25',
     'fade_seconds':       '1.5',
     'transitions':        'crossfade, fade_to_black, wipe',

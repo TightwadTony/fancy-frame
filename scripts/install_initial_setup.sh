@@ -85,6 +85,80 @@ choose_smb_mode() {
 
 SMB_MODE="$(choose_smb_mode)"
 
+choose_frame_name() {
+  local selected="${PHOTO_FRAME_NAME:-}"
+
+  if [[ -n "${selected}" ]]; then
+    printf '%s' "${selected}"
+    return 0
+  fi
+
+  if [[ -t 0 ]] && [[ -r /dev/tty ]] && [[ -w /dev/tty ]]; then
+    local default_name="Fancy Frame"
+    echo >&2
+    printf "Enter Fancy Frame display name [default: %s]: " "${default_name}" > /dev/tty
+    read -r entered_name < /dev/tty
+    if [[ -n "${entered_name}" ]]; then
+      printf '%s' "${entered_name}"
+    else
+      printf '%s' "${default_name}"
+    fi
+  else
+    printf '%s' "Fancy Frame"
+  fi
+}
+
+normalize_frame_name() {
+  local name="$1"
+  name="$(printf '%s' "${name}" | tr -d '\r\n' | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+  if [[ -z "${name}" ]]; then
+    name="Fancy Frame"
+  fi
+  if [[ ${#name} -gt 64 ]]; then
+    name="${name:0:64}"
+    name="$(printf '%s' "${name}" | sed -E 's/[[:space:]]+$//')"
+  fi
+  printf '%s' "${name}"
+}
+
+upsert_conf_key() {
+  local file_path="$1"
+  local key="$2"
+  local value="$3"
+  local tmp_file
+  tmp_file="$(mktemp)"
+
+  if [[ -f "${file_path}" ]]; then
+    awk -v key="${key}" -v value="${value}" '
+      BEGIN { found = 0 }
+      {
+        raw = $0
+        trimmed = raw
+        sub(/^[[:space:]]+/, "", trimmed)
+        if (trimmed !~ /^#/ && trimmed ~ ("^" key "[[:space:]]*=")) {
+          print key " = " value
+          found = 1
+        } else {
+          print raw
+        }
+      }
+      END {
+        if (!found) {
+          if (NR > 0) print ""
+          print key " = " value
+        }
+      }
+    ' "${file_path}" > "${tmp_file}"
+  else
+    printf '%s = %s\n' "${key}" "${value}" > "${tmp_file}"
+  fi
+
+  install -m 0666 "${tmp_file}" "${file_path}"
+  rm -f "${tmp_file}"
+}
+
+FRAME_NAME="$(normalize_frame_name "$(choose_frame_name)")"
+
 # Ask whether to run a full system upgrade before installing packages.
 RUN_UPGRADE="no"
 if [[ -n "${PHOTO_FRAME_UPGRADE:-}" ]]; then
@@ -102,6 +176,7 @@ fi
 
 echo "Using target user: ${TARGET_USER}"
 echo "SMB mode: ${SMB_MODE}"
+echo "Fancy Frame display name: ${FRAME_NAME}"
 
 configure_no_splash_boot() {
   local cmdline_file=""
@@ -267,7 +342,6 @@ apt install -y \
   python3-pygame \
   python3-pil \
   imagemagick \
-  sqlite3 \
   samba \
   avahi-daemon \
   hostapd \
@@ -283,12 +357,14 @@ chown -R "${TARGET_USER}:${TARGET_USER}" /srv/photos
 mkdir -p /var/lib/photo-frame
 chown -R "${TARGET_USER}:${TARGET_USER}" /var/lib/photo-frame
 
+upsert_conf_key /srv/photos/photo-frame.conf frame_name "${FRAME_NAME}"
+
 mkdir -p "${INSTALL_ROOT}"
 cp -a "${PROJECT_ROOT}/scripts" "${INSTALL_ROOT}/"
 cp -a "${PROJECT_ROOT}/portal" "${INSTALL_ROOT}/"
+cp -a "${PROJECT_ROOT}/api" "${INSTALL_ROOT}/"
 cp -a "${PROJECT_ROOT}/config" "${INSTALL_ROOT}/"
 cp -a "${PROJECT_ROOT}/systemd" "${INSTALL_ROOT}/"
-[[ -d "${PROJECT_ROOT}/assets" ]] && cp -a "${PROJECT_ROOT}/assets" "${INSTALL_ROOT}/"
 chmod +x "${INSTALL_ROOT}"/scripts/*.sh
 
 
@@ -320,10 +396,16 @@ install -m 0644 "${INSTALL_ROOT}/systemd/photo-frame.service" /etc/systemd/syste
 install -m 0644 "${INSTALL_ROOT}/systemd/photo-frame-wifi-bootstrap.service" /etc/systemd/system/photo-frame-wifi-bootstrap.service
 install -m 0644 "${INSTALL_ROOT}/systemd/photo-frame-setup-mode.service" /etc/systemd/system/photo-frame-setup-mode.service
 install -m 0644 "${INSTALL_ROOT}/systemd/photo-frame-setup-portal.service" /etc/systemd/system/photo-frame-setup-portal.service
+install -m 0644 "${INSTALL_ROOT}/systemd/photo-frame-api.service" /etc/systemd/system/photo-frame-api.service
 
 systemctl daemon-reload
 systemctl enable photo-frame.service
 systemctl enable photo-frame-wifi-bootstrap.service
+systemctl enable photo-frame-api.service
+
+
+echo "Installing Avahi mDNS advertisement..."
+install -m 0644 "${INSTALL_ROOT}/config/avahi-photo-frame.service" /etc/avahi/services/photo-frame.service
 
 
 echo "Configuring Samba share..."
