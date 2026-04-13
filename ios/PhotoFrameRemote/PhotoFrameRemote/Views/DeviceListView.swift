@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct DeviceListView: View {
     @Environment(DeviceDiscovery.self) private var discovery
@@ -8,15 +9,13 @@ struct DeviceListView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
-                    HStack(alignment: .center) {
-                        Text("FancyFrames")
-                            .font(.custom("Snell Roundhand", size: 32).weight(.bold))
-                        Spacer()
-                        Image("AppIconImage")
+                    HStack {
+                        Image("FancyFramesLogo")
                             .resizable()
                             .scaledToFill()
-                            .frame(width: 44, height: 44)
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .frame(height: 96)
+                            .clipped()
                     }
                     .padding(.horizontal, 12)
 
@@ -57,17 +56,11 @@ struct DeviceListView: View {
 
 private struct FrameRowView: View {
     let frame: PhotoFrame
+    @State private var thumbnail: UIImage?
 
     var body: some View {
         HStack(spacing: 14) {
-            ZStack {
-                Circle()
-                    .fill(frame.isReachable ? Color.accentColor.opacity(0.15) : Color.secondary.opacity(0.12))
-                    .frame(width: 48, height: 48)
-                Image(systemName: "photo.artframe")
-                    .font(.title2)
-                    .foregroundStyle(frame.isReachable ? Color.accentColor : Color.secondary)
-            }
+            avatarView
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(frame.name)
@@ -92,6 +85,149 @@ private struct FrameRowView: View {
             }
         }
         .padding(.vertical, 4)
+        .task(id: thumbnailTaskKey) {
+            await loadThumbnail()
+        }
+    }
+
+    private var avatarView: some View {
+        Group {
+            if let thumbnail {
+                Image(uiImage: thumbnail)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 48, height: 48)
+                    .clipShape(Circle())
+            } else {
+                ZStack {
+                    Circle()
+                        .fill(frame.isReachable ? Color.accentColor.opacity(0.15) : Color.secondary.opacity(0.12))
+                        .frame(width: 48, height: 48)
+                    Image(systemName: "photo.artframe")
+                        .font(.title2)
+                        .foregroundStyle(frame.isReachable ? Color.accentColor : Color.secondary)
+                }
+            }
+        }
+    }
+
+    private var thumbnailTaskKey: String {
+        "\(frame.id)|\(frame.host ?? "")|\(frame.isReachable)"
+    }
+
+    @MainActor
+    private func loadThumbnail() async {
+        let frameKey = "\(frame.id)|\(frame.host ?? "")"
+        if !FrameRowThumbnailCache.shared.shouldValidate(frameKey: frameKey),
+           let meta = FrameRowThumbnailCache.shared.metadata(for: frameKey),
+           let cached = FrameRowThumbnailCache.shared.image(forPhotoKey: photoKey(from: meta)) {
+            thumbnail = cached
+            return
+        }
+
+        guard frame.isReachable, let api = frame.api else {
+            thumbnail = nil
+            return
+        }
+
+        do {
+            let photos = try await api.fetchPhotoList()
+            guard let first = photos.first else {
+                FrameRowThumbnailCache.shared.clear(frameKey: frameKey)
+                thumbnail = nil
+                return
+            }
+
+            let meta = FrameRowThumbnailCache.FirstPhotoMeta(
+                filename: first.filename,
+                version: first.version,
+                thumbnailURL: first.thumbnailURL
+            )
+
+            if FrameRowThumbnailCache.shared.metadata(for: frameKey) == meta,
+               let cached = FrameRowThumbnailCache.shared.image(forPhotoKey: photoKey(from: meta)) {
+                FrameRowThumbnailCache.shared.markValidated(frameKey: frameKey)
+                thumbnail = cached
+                return
+            }
+
+            let url = meta.thumbnailURL ?? api.photoURL(
+                filename: first.filename,
+                version: first.version,
+                thumbnail: true
+            )
+
+            guard let url else {
+                thumbnail = nil
+                return
+            }
+
+            let (data, response) = try await URLSession.shared.data(from: url)
+            guard let http = response as? HTTPURLResponse,
+                  (200..<300).contains(http.statusCode),
+                  let image = UIImage(data: data) else {
+                thumbnail = nil
+                return
+            }
+
+            FrameRowThumbnailCache.shared.set(image, forPhotoKey: photoKey(from: meta))
+            FrameRowThumbnailCache.shared.update(frameKey: frameKey, meta: meta)
+            FrameRowThumbnailCache.shared.markValidated(frameKey: frameKey)
+            thumbnail = image
+        } catch {
+            thumbnail = nil
+        }
+    }
+
+    private func photoKey(from meta: FrameRowThumbnailCache.FirstPhotoMeta) -> String {
+        "\(meta.filename)|\(meta.version)"
+    }
+}
+
+@MainActor
+private final class FrameRowThumbnailCache {
+    struct FirstPhotoMeta: Equatable {
+        let filename: String
+        let version: String
+        let thumbnailURL: URL?
+    }
+
+    static let shared = FrameRowThumbnailCache()
+    private let imageCache = NSCache<NSString, UIImage>()
+    private var frameToMeta: [String: FirstPhotoMeta] = [:]
+    private var lastValidatedAt: [String: Date] = [:]
+    private let validateInterval: TimeInterval = 45
+
+    private init() {}
+
+    func shouldValidate(frameKey: String) -> Bool {
+        guard let last = lastValidatedAt[frameKey] else { return true }
+        return Date().timeIntervalSince(last) >= validateInterval
+    }
+
+    func metadata(for frameKey: String) -> FirstPhotoMeta? {
+        frameToMeta[frameKey]
+    }
+
+    func image(forPhotoKey key: String) -> UIImage? {
+        imageCache.object(forKey: key as NSString)
+    }
+
+    func set(_ image: UIImage, forPhotoKey key: String) {
+        imageCache.setObject(image, forKey: key as NSString)
+    }
+
+    func update(frameKey: String, meta: FirstPhotoMeta) {
+        frameToMeta[frameKey] = meta
+    }
+
+    func markValidated(frameKey: String) {
+        lastValidatedAt[frameKey] = Date()
+    }
+
+    func clear(frameKey: String) {
+        frameToMeta.removeValue(forKey: frameKey)
+        lastValidatedAt.removeValue(forKey: frameKey)
     }
 }
 
