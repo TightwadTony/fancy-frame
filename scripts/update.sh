@@ -71,7 +71,7 @@ echo "Reloading systemd daemon..."
 systemctl daemon-reload
 
 echo "Restarting services..."
-systemctl restart photo-frame-api.service
+systemctl restart photo-frame-api.service  || true
 systemctl restart photo-frame.service
 
 echo
