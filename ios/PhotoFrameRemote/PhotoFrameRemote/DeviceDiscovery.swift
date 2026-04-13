@@ -7,10 +7,17 @@ import Observation
 @Observable
 final class PhotoFrame: Identifiable {
     let id: String           // mDNS instance name (stable across resolves)
-    let name: String         // Human-readable display name
+    private(set) var name: String   // Human-readable display name
+    private(set) var hostname: String?
+    private(set) var ipAddress: String?
     private(set) var host: String?
     private(set) var port: Int
     private(set) var isReachable: Bool = false
+
+    var displayName: String {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "Photo Frame" : trimmed
+    }
 
     var api: PhotoFrameAPI? {
         guard let host else { return nil }
@@ -29,6 +36,25 @@ final class PhotoFrame: Identifiable {
         self.host        = host
         self.port        = port
         self.isReachable = reachable
+        if reachable {
+            self.ipAddress = host
+        }
+    }
+
+    func updateInfo(hostname: String?, ipAddress: String?) {
+        self.hostname = hostname?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let ipAddress {
+            let trimmed = ipAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                self.ipAddress = trimmed
+            }
+        }
+    }
+
+    func updateDisplayName(_ value: String) {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        name = trimmed
     }
 }
 
@@ -42,6 +68,8 @@ final class DeviceDiscovery {
 
     private var browser: NWBrowser?
     private var connections: [String: NWConnection] = [:]
+    private var lastDisplayNameFetchAt: [String: Date] = [:]
+    private let displayNameRefreshInterval: TimeInterval = 60
 
     init() {
         start()
@@ -79,6 +107,7 @@ final class DeviceDiscovery {
         browser = nil
         connections.values.forEach { $0.cancel() }
         connections.removeAll()
+        lastDisplayNameFetchAt.removeAll()
         isSearching = false
     }
 
@@ -107,7 +136,7 @@ final class DeviceDiscovery {
             resolve(result)
         }
 
-        frames.sort { $0.name < $1.name }
+        frames.sort { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
     }
 
     private func resolve(_ result: NWBrowser.Result) {
@@ -127,6 +156,7 @@ final class DeviceDiscovery {
                        let endpoint = path.remoteEndpoint {
                         let (host, port) = self.extractHostPort(from: endpoint, result: result)
                         frame.update(host: host, port: port, reachable: true)
+                        Task { await self.refreshDisplayNameIfNeeded(forID: id) }
                     }
                 case .failed, .cancelled:
                     frame.update(host: frame.host ?? "", port: frame.port, reachable: false)
@@ -169,5 +199,31 @@ final class DeviceDiscovery {
             return name
         }
         return result.endpoint.debugDescription
+    }
+
+    private func refreshDisplayNameIfNeeded(forID id: String) async {
+        guard let frame = frames.first(where: { $0.id == id }),
+              frame.isReachable,
+              let api = frame.api else {
+            return
+        }
+
+        if let last = lastDisplayNameFetchAt[id],
+           Date().timeIntervalSince(last) < displayNameRefreshInterval {
+            return
+        }
+
+        lastDisplayNameFetchAt[id] = Date()
+
+        do {
+            async let fetchedConfig = api.fetchConfig()
+            async let fetchedInfo = api.fetchInfo()
+            let (config, info) = try await (fetchedConfig, fetchedInfo)
+            frame.updateDisplayName(config.frameName)
+            frame.updateInfo(hostname: info.hostname, ipAddress: info.ipAddress)
+            frames.sort { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+        } catch {
+            // Keep mDNS name when config lookup fails.
+        }
     }
 }

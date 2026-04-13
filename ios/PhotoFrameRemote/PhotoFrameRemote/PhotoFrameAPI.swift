@@ -25,6 +25,7 @@ struct PhotoFrameInfo: Codable {
 }
 
 struct PhotoFrameConfig: Codable, Equatable {
+    var frameName:       String
     var slideSeconds:    Double
     var fadeSeconds:     Double
     var transitions:     [String]
@@ -33,6 +34,7 @@ struct PhotoFrameConfig: Codable, Equatable {
     var kenBurnsZoomMax: Double
 
     enum CodingKeys: String, CodingKey {
+        case frameName       = "frame_name"
         case slideSeconds    = "slide_seconds"
         case fadeSeconds     = "fade_seconds"
         case transitions
@@ -42,6 +44,7 @@ struct PhotoFrameConfig: Codable, Equatable {
     }
 
     static let `default` = PhotoFrameConfig(
+        frameName:       "Photo Frame",
         slideSeconds:    25,
         fadeSeconds:     1.5,
         transitions:     ["crossfade", "fade_to_black", "wipe"],
@@ -49,6 +52,35 @@ struct PhotoFrameConfig: Codable, Equatable {
         kenBurnsZoomMin: 1.02,
         kenBurnsZoomMax: 1.20
     )
+
+    init(
+        frameName: String,
+        slideSeconds: Double,
+        fadeSeconds: Double,
+        transitions: [String],
+        kenBurns: Bool,
+        kenBurnsZoomMin: Double,
+        kenBurnsZoomMax: Double
+    ) {
+        self.frameName = frameName
+        self.slideSeconds = slideSeconds
+        self.fadeSeconds = fadeSeconds
+        self.transitions = transitions
+        self.kenBurns = kenBurns
+        self.kenBurnsZoomMin = kenBurnsZoomMin
+        self.kenBurnsZoomMax = kenBurnsZoomMax
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        frameName = (try c.decodeIfPresent(String.self, forKey: .frameName) ?? Self.default.frameName)
+        slideSeconds = try c.decodeIfPresent(Double.self, forKey: .slideSeconds) ?? Self.default.slideSeconds
+        fadeSeconds = try c.decodeIfPresent(Double.self, forKey: .fadeSeconds) ?? Self.default.fadeSeconds
+        transitions = try c.decodeIfPresent([String].self, forKey: .transitions) ?? Self.default.transitions
+        kenBurns = try c.decodeIfPresent(Bool.self, forKey: .kenBurns) ?? Self.default.kenBurns
+        kenBurnsZoomMin = try c.decodeIfPresent(Double.self, forKey: .kenBurnsZoomMin) ?? Self.default.kenBurnsZoomMin
+        kenBurnsZoomMax = try c.decodeIfPresent(Double.self, forKey: .kenBurnsZoomMax) ?? Self.default.kenBurnsZoomMax
+    }
 }
 
 struct PhotoCount: Decodable {

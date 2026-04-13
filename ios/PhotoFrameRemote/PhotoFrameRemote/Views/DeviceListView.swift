@@ -63,12 +63,12 @@ private struct FrameRowView: View {
             avatarView
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(frame.name)
+                Text(frame.displayName)
                     .font(.headline)
                     .foregroundStyle(frame.isReachable ? .primary : .secondary)
 
-                if let host = frame.host {
-                    Text("\(host)  ·  \(frame.host ?? "—")")
+                if let subtitle = hostAndIPSubtitle {
+                    Text(subtitle)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -88,6 +88,22 @@ private struct FrameRowView: View {
         .task(id: thumbnailTaskKey) {
             await loadThumbnail()
         }
+    }
+
+    private var hostAndIPSubtitle: String? {
+        let hostname = frame.hostname?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let ip = frame.ipAddress ?? frame.host
+
+        if let hostname, !hostname.isEmpty, let ip, !ip.isEmpty {
+            return "\(hostname)  ·  \(ip)"
+        }
+        if let hostname, !hostname.isEmpty {
+            return hostname
+        }
+        if let ip, !ip.isEmpty {
+            return ip
+        }
+        return nil
     }
 
     private var avatarView: some View {

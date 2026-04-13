@@ -44,6 +44,7 @@ VALID_TRANSITIONS = {'crossfade', 'fade_to_black', 'wipe'}
 VALID_IMAGE_EXTS  = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tif', '.tiff'}
 
 CONFIG_DEFAULTS: dict[str, str] = {
+    'frame_name':         'Photo Frame',
     'slide_seconds':      '25',
     'fade_seconds':       '1.5',
     'transitions':        'crossfade, fade_to_black, wipe',
@@ -107,7 +108,9 @@ def _config_to_dict(raw: dict[str, str]) -> dict:
     """Convert raw string config into typed API response dict."""
     merged = {**CONFIG_DEFAULTS, **raw}
     transitions = [t.strip() for t in merged['transitions'].split(',') if t.strip()]
+    frame_name = merged['frame_name'].strip() or CONFIG_DEFAULTS['frame_name']
     return {
+        'frame_name':         frame_name,
         'slide_seconds':      float(merged['slide_seconds']),
         'fade_seconds':       float(merged['fade_seconds']),
         'transitions':        transitions,
@@ -120,6 +123,16 @@ def _config_to_dict(raw: dict[str, str]) -> dict:
 def _validate_patch(data: dict) -> list[str]:
     """Return a list of validation error messages (empty = valid)."""
     errors: list[str] = []
+
+    if 'frame_name' in data:
+        if not isinstance(data['frame_name'], str):
+            errors.append('frame_name must be a string')
+        else:
+            value = data['frame_name'].strip()
+            if not value:
+                errors.append('frame_name must not be empty')
+            if len(value) > 64:
+                errors.append('frame_name must be <= 64 characters')
 
     if 'slide_seconds' in data:
         try:
@@ -218,6 +231,7 @@ def patch_config():
     Update one or more configuration values.
 
     Accepts a JSON body with any subset of:
+            frame_name (string),
       slide_seconds (number), fade_seconds (number),
       transitions (array of strings), ken_burns (bool),
       ken_burns_zoom_min (number), ken_burns_zoom_max (number)
@@ -232,6 +246,9 @@ def patch_config():
 
     raw = _read_raw_config()
     merged = {**CONFIG_DEFAULTS, **raw}
+
+    if 'frame_name' in data:
+        merged['frame_name'] = data['frame_name'].strip()
 
     if 'slide_seconds' in data:
         merged['slide_seconds'] = str(float(data['slide_seconds']))

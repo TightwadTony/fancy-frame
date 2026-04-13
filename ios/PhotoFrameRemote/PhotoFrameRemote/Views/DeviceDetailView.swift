@@ -27,7 +27,7 @@ struct DeviceDetailView: View {
                         .font(.body)
                     }
                     Spacer()
-                    Text(frame.name)
+                    Text(frame.displayName)
                         .font(.headline)
                     Spacer()
                     // balance chevron width
@@ -172,6 +172,7 @@ struct DeviceDetailView: View {
             config     = c
             info       = i
             photoCount = n
+            frame.updateDisplayName(c.frameName)
         } catch {
             self.error = error.localizedDescription
         }
@@ -188,6 +189,7 @@ struct DeviceDetailView: View {
             config     = c
             info       = i
             photoCount = n
+            frame.updateDisplayName(c.frameName)
         } catch {
             // Suppress errors on background refresh — don't interrupt the user
         }

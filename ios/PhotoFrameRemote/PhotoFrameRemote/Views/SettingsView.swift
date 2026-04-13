@@ -44,6 +44,7 @@ struct SettingsView: View {
                     .padding(.vertical)
                 }
             } else {
+                frameSection
                 slideshowSection
                 kenBurnsSection
                 restartSection
@@ -90,6 +91,14 @@ struct SettingsView: View {
     }
 
     // MARK: - Sections
+
+    private var frameSection: some View {
+        Section("Frame") {
+            TextField("Display Name", text: $config.frameName)
+                .textInputAutocapitalization(.words)
+                .autocorrectionDisabled(true)
+        }
+    }
 
     private var slideshowSection: some View {
         Section("Slideshow") {
@@ -194,6 +203,7 @@ struct SettingsView: View {
             let c = try await api.fetchConfig()
             config      = c
             savedConfig = c
+            frame.updateDisplayName(c.frameName)
         } catch {
             self.error = error.localizedDescription
         }
@@ -202,12 +212,20 @@ struct SettingsView: View {
 
     private func save() {
         guard let api = frame.api else { return }
+        let trimmedName = config.frameName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else {
+            error = "Display name cannot be empty."
+            return
+        }
+
+        config.frameName = trimmedName
         isSaving = true
         Task {
             do {
                 let updated = try await api.updateConfig(config)
                 config      = updated
                 savedConfig = updated
+                frame.updateDisplayName(updated.frameName)
             } catch {
                 self.error = error.localizedDescription
             }
