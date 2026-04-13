@@ -695,7 +695,7 @@ def patch_samba():
     try:
         _write_samba_share(data['guest_access'], username)
         subprocess.run(['systemctl', 'reload', 'smbd'], check=True, timeout=10)
-    except Exception:
+    except (RuntimeError, OSError, subprocess.SubprocessError):
         logger.exception('Failed to update Samba share configuration')
         return jsonify({'error': 'Failed to update share configuration. Please try again.'}), 500
 
