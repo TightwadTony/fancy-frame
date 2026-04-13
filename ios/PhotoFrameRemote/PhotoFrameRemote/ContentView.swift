@@ -21,7 +21,6 @@ struct ContentView: View {
             DeviceListView()
                 .environment(\.statusBarHeight, geo.safeAreaInsets.top)
         }
-        .ignoresSafeArea(edges: .top)
     }
 }
 

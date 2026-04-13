@@ -5,19 +5,24 @@ struct DeviceListView: View {
     @Environment(DeviceDiscovery.self) private var discovery
     @Environment(\.statusBarHeight) private var statusBarHeight
 
+    private var logoTopInset: CGFloat {
+        // Place the logo as close as possible to the Dynamic Island without overlap.
+        max(statusBarHeight - 36, 6)
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
                     HStack {
                         Image("FancyFramesLogo")
                             .resizable()
-                            .scaledToFill()
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .frame(height: 96)
-                            .clipped()
+                            .scaledToFit()
+                            .frame(maxWidth: .infinity, alignment: .center)
+                            .frame(height: 220)
                     }
                     .padding(.horizontal, 12)
+                    .padding(.bottom, -34)
 
                     if discovery.frames.isEmpty {
                         EmptyStateView()
@@ -39,7 +44,7 @@ struct DeviceListView: View {
                         .padding(.horizontal, 12)
                     }
                 }
-                .padding(.top, statusBarHeight + 8)
+                .padding(.top, logoTopInset)
                 .padding(.bottom, 12)
             }
             .ignoresSafeArea(edges: .top)

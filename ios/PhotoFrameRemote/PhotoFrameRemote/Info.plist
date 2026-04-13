@@ -24,6 +24,8 @@
 	</array>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>FancyFrame needs access to your local network to discover and manage photo frames.</string>
+	<key>UILaunchScreen</key>
+	<dict/>
 	<key>UIStatusBarStyle</key>
 	<string></string>
 	<key>UISupportedInterfaceOrientations</key>
