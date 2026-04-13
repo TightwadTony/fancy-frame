@@ -87,6 +87,16 @@ struct PhotoCount: Decodable {
     let count: Int
 }
 
+struct SambaSettings: Codable {
+    let guestAccess: Bool
+    let username: String?
+
+    enum CodingKeys: String, CodingKey {
+        case guestAccess = "guest_access"
+        case username
+    }
+}
+
 struct PhotoFramePhoto: Codable, Identifiable, Hashable {
     let filename: String
     let version: String
@@ -130,6 +140,9 @@ struct PhotoFrameAPI {
 
     // Error response from PATCH with validation errors
     private struct ErrorBody: Decodable { let errors: [String] }
+    // Single-field error response (samba endpoints)
+    private struct SingleErrorBody: Decodable { let error: String }
+    private struct StatusResponse: Decodable { let status: String }
 
     private func get<T: Decodable>(_ path: String) async throws -> T {
         let url = baseURL.appendingPathComponent(path)
@@ -157,6 +170,32 @@ struct PhotoFrameAPI {
             }
         }
         guard (200..<300).contains(http.statusCode) else { throw APIError.httpError(http.statusCode) }
+        do {
+            return try JSONDecoder().decode(T.self, from: data)
+        } catch {
+            throw APIError.decodingError(error)
+        }
+    }
+
+    /// Generic request for samba endpoints — handles both `{"error":"..."}` and
+    /// `{"errors":[...]}` response bodies on non-2xx responses.
+    private func request<T: Decodable>(_ method: String, _ path: String, body: some Encodable) async throws -> T {
+        let url = baseURL.appendingPathComponent(path)
+        var req = URLRequest(url: url)
+        req.httpMethod = method
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONEncoder().encode(body)
+        let (data, response) = try await session.data(for: req)
+        guard let http = response as? HTTPURLResponse else { throw APIError.httpError(0) }
+        if !(200..<300).contains(http.statusCode) {
+            if let errBody = try? JSONDecoder().decode(ErrorBody.self, from: data) {
+                throw APIError.validationError(errBody.errors)
+            }
+            if let errBody = try? JSONDecoder().decode(SingleErrorBody.self, from: data) {
+                throw APIError.validationError([errBody.error])
+            }
+            throw APIError.httpError(http.statusCode)
+        }
         do {
             return try JSONDecoder().decode(T.self, from: data)
         } catch {
@@ -253,5 +292,34 @@ struct PhotoFrameAPI {
               (200..<300).contains(http.statusCode) else {
             throw APIError.httpError(0)
         }
+    }
+
+    // MARK: - Samba
+
+    func fetchSambaSettings() async throws -> SambaSettings {
+        try await get("api/samba")
+    }
+
+    func changeSambaPassword(current currentPassword: String, new newPassword: String) async throws {
+        struct Body: Encodable {
+            let currentPassword: String
+            let newPassword: String
+            enum CodingKeys: String, CodingKey {
+                case currentPassword = "current_password"
+                case newPassword     = "new_password"
+            }
+        }
+        let _: StatusResponse = try await request(
+            "POST", "api/samba/password",
+            body: Body(currentPassword: currentPassword, newPassword: newPassword)
+        )
+    }
+
+    func setSambaGuestAccess(_ enabled: Bool) async throws -> SambaSettings {
+        struct Body: Encodable {
+            let guestAccess: Bool
+            enum CodingKeys: String, CodingKey { case guestAccess = "guest_access" }
+        }
+        return try await request("PATCH", "api/samba", body: Body(guestAccess: enabled))
     }
 }

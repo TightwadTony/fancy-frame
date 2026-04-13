@@ -47,6 +47,7 @@ struct SettingsView: View {
                 frameSection
                 slideshowSection
                 kenBurnsSection
+                shareSection
                 restartSection
             }
         }
@@ -162,6 +163,16 @@ struct SettingsView: View {
                     }
                 }
                 .padding(.vertical, 2)
+            }
+        }
+    }
+
+    private var shareSection: some View {
+        Section("Share") {
+            NavigationLink {
+                SambaSettingsView(frame: frame)
+            } label: {
+                Label("Share Settings", systemImage: "folder.badge.gearshape")
             }
         }
     }
