@@ -209,6 +209,18 @@ configure_no_splash_boot() {
     cmdline+=" vt.global_cursor_default=0"
   fi
 
+  if [[ " ${cmdline} " != *" quiet "* ]]; then
+    cmdline+=" quiet"
+  fi
+
+  if [[ " ${cmdline} " != *" loglevel=3 "* ]]; then
+    cmdline+=" loglevel=3"
+  fi
+
+  if [[ " ${cmdline} " != *" systemd.show_status=auto "* ]]; then
+    cmdline+=" systemd.show_status=auto"
+  fi
+
   # Collapse multiple spaces
   cmdline="$(echo "${cmdline}" | tr -s ' ' | sed 's/^ //;s/ $//')"
 
@@ -278,6 +290,16 @@ configure_boot_target() {
   local default_target
   default_target="$(systemctl get-default)"
   echo "Current default boot target: ${default_target}"
+}
+
+configure_display_console() {
+  # This device has a dedicated display, so hide the Linux login consoles on the
+  # first two virtual terminals and let the slideshow own tty1.
+  for unit in getty@tty1.service getty@tty2.service; do
+    systemctl stop "${unit}" >/dev/null 2>&1 || true
+    systemctl disable "${unit}" >/dev/null 2>&1 || true
+    systemctl mask "${unit}" >/dev/null 2>&1 || true
+  done
 }
 
 configure_samba_tuning() {
@@ -502,6 +524,9 @@ configure_xorg_permissions
 
 echo "Configuring boot target (console-only)..."
 configure_boot_target
+
+echo "Configuring dedicated display console..."
+configure_display_console
 
 echo "Configuring no-splash boot..."
 configure_no_splash_boot
