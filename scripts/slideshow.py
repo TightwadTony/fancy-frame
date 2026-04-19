@@ -19,6 +19,7 @@ import sys
 import random
 import time
 import threading
+import traceback
 import types
 
 import pygame
@@ -415,6 +416,24 @@ def _parse_config_file(path: str) -> dict[str, str]:
     return result
 
 
+def _safe_float(raw: dict[str, str], key: str, *, minimum: float | None = None, maximum: float | None = None) -> float:
+    default = float(_CONFIG_DEFAULTS[key])
+    value = raw.get(key, _CONFIG_DEFAULTS[key])
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        print(f'slideshow: invalid {key}={value!r}; using default {default}', file=sys.stderr)
+        parsed = default
+
+    if minimum is not None and parsed < minimum:
+        print(f'slideshow: clamping {key}={parsed} to minimum {minimum}', file=sys.stderr)
+        parsed = minimum
+    if maximum is not None and parsed > maximum:
+        print(f'slideshow: clamping {key}={parsed} to maximum {maximum}', file=sys.stderr)
+        parsed = maximum
+    return parsed
+
+
 def load_config(path: str = CONFIG_FILE) -> types.SimpleNamespace:
     """
     Read the config file and return a SimpleNamespace of typed settings.
@@ -432,18 +451,30 @@ def load_config(path: str = CONFIG_FILE) -> types.SimpleNamespace:
     raw = {**_CONFIG_DEFAULTS, **_parse_config_file(path)}
 
     # Parse transition function list
-    names = [n.strip() for n in raw['transitions'].split(',')]
+    names = [n.strip() for n in raw.get('transitions', _CONFIG_DEFAULTS['transitions']).split(',')]
     fns = [TRANSITION_FNS[n] for n in names if n in TRANSITION_FNS]
     if not fns:
+        print('slideshow: no valid transitions configured; falling back to defaults', file=sys.stderr)
         fns = list(TRANSITION_FNS.values())
 
+    slide_secs = _safe_float(raw, 'slide_seconds', minimum=1.0)
+    fade_secs = _safe_float(raw, 'fade_seconds', minimum=0.0)
+    zoom_min = _safe_float(raw, 'ken_burns_zoom_min', minimum=1.0, maximum=3.0)
+    zoom_max = _safe_float(raw, 'ken_burns_zoom_max', minimum=zoom_min, maximum=3.0)
+    if fade_secs > slide_secs:
+        print(
+            f'slideshow: fade_seconds={fade_secs} exceeds slide_seconds={slide_secs}; clamping fade',
+            file=sys.stderr,
+        )
+        fade_secs = slide_secs
+
     return types.SimpleNamespace(
-        slide_secs = float(raw['slide_seconds']),
-        fade_secs  = float(raw['fade_seconds']),
+        slide_secs = slide_secs,
+        fade_secs  = fade_secs,
         fns        = fns,
-        ken_burns  = raw['ken_burns'].strip().lower() in ('yes', '1', 'true'),
-        zoom_min   = float(raw['ken_burns_zoom_min']),
-        zoom_max   = float(raw['ken_burns_zoom_max']),
+        ken_burns  = raw.get('ken_burns', _CONFIG_DEFAULTS['ken_burns']).strip().lower() in ('yes', '1', 'true'),
+        zoom_min   = zoom_min,
+        zoom_max   = zoom_max,
     )
 
 
@@ -571,4 +602,15 @@ class _StaticFrame:
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except Exception:
+        print('slideshow: fatal unhandled exception', file=sys.stderr)
+        traceback.print_exc()
+        sys.stderr.flush()
+        try:
+            pygame.quit()
+        except Exception:
+            pass
+        time.sleep(2)
+        sys.exit(1)

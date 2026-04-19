@@ -75,10 +75,28 @@ def _read_raw_config() -> dict[str, str]:
     return result
 
 
+def _safe_config_float(raw: dict[str, str], key: str, *, minimum: float | None = None, maximum: float | None = None) -> float:
+    default = float(CONFIG_DEFAULTS[key])
+    value = raw.get(key, CONFIG_DEFAULTS[key])
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        logger.warning('Invalid config value for %s=%r; using default %s', key, value, default)
+        parsed = default
+
+    if minimum is not None and parsed < minimum:
+        logger.warning('Clamping %s=%s to minimum %s', key, parsed, minimum)
+        parsed = minimum
+    if maximum is not None and parsed > maximum:
+        logger.warning('Clamping %s=%s to maximum %s', key, parsed, maximum)
+        parsed = maximum
+    return parsed
+
+
 def _write_config(values: dict[str, str]) -> None:
     """
-    Write values back to the config file, preserving comments and ordering.
-    Lines for keys in `values` are updated in-place; unknown keys are appended.
+    Write values back to the config file atomically, preserving comments and ordering.
+    Lines for keys in values are updated in-place; unknown keys are appended.
     """
     lines: list[str] = []
     written: set[str] = set()
@@ -95,28 +113,44 @@ def _write_config(values: dict[str, str]) -> None:
                     continue
             lines.append(line)
 
-    # Append any keys that weren't already in the file
     for key, val in values.items():
         if key not in written:
             lines.append(f'{key} = {val}')
 
-    CONFIG_FILE.write_text('\n'.join(lines) + '\n')
-    os.chmod(CONFIG_FILE, 0o666)
+    tmp_path = CONFIG_FILE.with_name(f'.{CONFIG_FILE.name}.{os.getpid()}.tmp')
+    try:
+        tmp_path.write_text('\n'.join(lines) + '\n')
+        os.chmod(tmp_path, 0o666)
+        os.replace(tmp_path, CONFIG_FILE)
+    finally:
+        try:
+            if tmp_path.exists():
+                tmp_path.unlink()
+        except OSError:
+            pass
 
 
 def _config_to_dict(raw: dict[str, str]) -> dict:
     """Convert raw string config into typed API response dict."""
     merged = {**CONFIG_DEFAULTS, **raw}
-    transitions = [t.strip() for t in merged['transitions'].split(',') if t.strip()]
+    transitions = [t.strip() for t in merged['transitions'].split(',') if t.strip() in VALID_TRANSITIONS]
+    if not transitions:
+        logger.warning('No valid transitions in config; falling back to defaults')
+        transitions = [t.strip() for t in CONFIG_DEFAULTS['transitions'].split(',') if t.strip()]
+
+    slide_seconds = _safe_config_float(merged, 'slide_seconds', minimum=1.0)
+    fade_seconds = _safe_config_float(merged, 'fade_seconds', minimum=0.0, maximum=slide_seconds)
+    zoom_min = _safe_config_float(merged, 'ken_burns_zoom_min', minimum=1.0, maximum=3.0)
+    zoom_max = _safe_config_float(merged, 'ken_burns_zoom_max', minimum=zoom_min, maximum=3.0)
     frame_name = merged['frame_name'].strip() or CONFIG_DEFAULTS['frame_name']
     return {
         'frame_name':         frame_name,
-        'slide_seconds':      float(merged['slide_seconds']),
-        'fade_seconds':       float(merged['fade_seconds']),
+        'slide_seconds':      slide_seconds,
+        'fade_seconds':       fade_seconds,
         'transitions':        transitions,
         'ken_burns':          merged['ken_burns'].lower() in ('yes', '1', 'true'),
-        'ken_burns_zoom_min': float(merged['ken_burns_zoom_min']),
-        'ken_burns_zoom_max': float(merged['ken_burns_zoom_max']),
+        'ken_burns_zoom_min': zoom_min,
+        'ken_burns_zoom_max': zoom_max,
     }
 
 
@@ -179,6 +213,14 @@ def _validate_patch(data: dict) -> list[str]:
                 errors.append('ken_burns_zoom_min must be <= ken_burns_zoom_max')
         except (TypeError, ValueError):
             pass
+
+    try:
+        slide_value = float(data.get('slide_seconds', CONFIG_DEFAULTS['slide_seconds']))
+        fade_value = float(data.get('fade_seconds', CONFIG_DEFAULTS['fade_seconds']))
+        if fade_value > slide_value:
+            errors.append('fade_seconds must be <= slide_seconds')
+    except (TypeError, ValueError):
+        pass
 
     return errors
 
