@@ -51,23 +51,6 @@
             ReferencedContainer = "container:PhotoFrameRemote.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
-      <EnvironmentVariables>
-         <EnvironmentVariable
-            key = "PHOTO_FRAME_STUB_COUNT"
-            value = "0"
-            isEnabled = "YES">
-         </EnvironmentVariable>
-         <EnvironmentVariable
-            key = "PHOTO_FRAME_STUB_START_PORT"
-            value = "9000"
-            isEnabled = "YES">
-         </EnvironmentVariable>
-         <EnvironmentVariable
-            key = "PHOTO_FRAME_STUB_HOST"
-            value = "192.168.1.233"
-            isEnabled = "YES">
-         </EnvironmentVariable>
-      </EnvironmentVariables>
    </LaunchAction>
    <ProfileAction
       buildConfiguration = "Release"

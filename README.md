@@ -1,15 +1,17 @@
 # Photo Frame
 
-A lightweight, headless photo slideshow application for Raspberry Pi Zero with automatic Wi-Fi onboarding and SMB network file sharing.
+A self-contained digital photo frame system for Raspberry Pi Zero with a full-screen slideshow, automatic Wi-Fi onboarding, a local REST management API, and a native iPhone remote app.
 
 ## Features
 
-- **Full-screen slideshow** on connected LCD panel (no desktop needed)
-- **Automatic Wi-Fi onboarding portal** when device cannot connect to a known network
+- **Full-screen slideshow** on the connected LCD panel with crossfade, fade-to-black, wipe, and Ken Burns effects
+- **REST management API** on Wi-Fi for frame info, slideshow settings, photo listing, uploads, deletions, and restart
+- **Native iOS 17+ app** with Bonjour discovery for settings and photo management
 - **SMB network share** for adding/removing photos from phones, laptops, or other devices on the same local network
+- **Automatic Wi-Fi onboarding portal** when the device cannot connect to a known network
 - **Automatic reconnection** with saved Wi-Fi credentials
 - **Boot-time AP fallback only** (onboarding AP starts only if Wi-Fi is not connected within 60 seconds after boot)
-- **Python/pygame slideshow** with crossfade, fade-to-black, and wipe transitions plus Ken Burns zoom/pan
+- **Local multi-frame test stub** via Docker or Python for iOS QA and discovery testing
 - **Systemd services** for reliable boot and auto-restart
 
 ## Hardware Requirements
@@ -94,17 +96,39 @@ If the device enters setup mode (onboarding AP):
 4. AP disconnects while credentials are applied
 5. On success, device reboots and reconnects as a Wi-Fi client
 
+## Remote management
+
+When the frame is connected to Wi-Fi, it also exposes a local management API on port 8080 and advertises itself via `_photoframe._tcp.local.` for iPhone discovery.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/api/info` | Hostname, IP address, uptime |
+| GET | `/api/config` | Current slideshow configuration |
+| PATCH | `/api/config` | Update frame name and slideshow settings |
+| GET / POST | `/api/photos` | Photo count and uploads |
+| GET | `/api/photos/list` | Gallery listing for the iOS app |
+| GET / DELETE | `/api/photos/<filename>` | Thumbnail/full image fetch and deletion |
+| POST | `/api/restart` | Reboot the frame |
+
+Open the iPhone app from `ios/PhotoFrameRemote/` in Xcode to manage settings and photos on the local network.
+
 ## Directory Structure
 
 ```
 photo-frame/
+├── api/
+│   └── app.py                        # Flask management API (port 8080)
+├── ios/
+│   └── PhotoFrameRemote/             # Native iOS 17+ remote app
 ├── scripts/
 │   ├── install_initial_setup.sh      # Main installer (run once as root)
 │   ├── wifi_bootstrap.sh             # Decides normal vs setup mode
 │   ├── start_setup_mode.sh           # Enable AP + DHCP
 │   ├── stop_setup_mode.sh            # Disable AP, restore client mode
 │   ├── connect_wifi.sh               # Apply and test Wi-Fi credentials
-│   └── start-slideshow.sh            # Launch slideshow (called by systemd)
+│   ├── start-slideshow.sh            # Launch slideshow (called by systemd)
+│   ├── slideshow.py                  # Slideshow engine
+│   └── test_stub.py                  # Local multi-frame simulator for the iOS app
 ├── portal/
 │   ├── app.py                        # Flask onboarding web app
 │   └── templates/
@@ -114,11 +138,15 @@ photo-frame/
 │   ├── photo-frame.service           # Main slideshow service
 │   ├── photo-frame-wifi-bootstrap.service  # Bootstrap decision logic
 │   ├── photo-frame-setup-mode.service      # AP/DHCP service
-│   └── photo-frame-setup-portal.service    # Web portal service
+│   ├── photo-frame-setup-portal.service    # Web portal service
+│   └── photo-frame-api.service            # Management API service
 ├── config/
 │   ├── hostapd.conf                  # Access point config
 │   ├── dnsmasq-photo-frame.conf      # DHCP/DNS for AP mode
-│   └── (Samba share is configured by installer logic)
+│   └── avahi-photo-frame.service     # mDNS advertisement for the API
+├── docker-compose.yml                # Test-stub launch config
+├── Dockerfile.test-stub              # Test-stub container image
+├── requirements-test-stub.txt        # Test-stub Python dependency list
 ├── SETUP.md                          # Detailed setup instructions
 └── README.md                         # This file
 ```
@@ -248,6 +276,102 @@ Verify hostapd and dnsmasq are running:
 ssh photo@192.168.4.1
 systemctl status hostapd
 systemctl status dnsmasq
+```
+
+## Testing: Photo Frame Test Stub
+
+For testing the iOS app with multiple simulated frames on your local network, use the **test stub**.
+
+### Quick Start
+
+```bash
+cd /path/to/photo-frame
+
+# Start 3 test frames (default)
+docker compose up test-frames
+
+# Or specify a different number
+TEST_STUB_FRAMES=5 docker compose up test-frames
+
+# Stop the test frames
+docker compose down
+```
+
+### Usage
+
+The test stub advertises fake Photo Frame devices on `_photoframe._tcp.local.` (mDNS/Bonjour) so your iOS app can discover them.
+
+**Requirements:**
+- Docker and Docker Compose installed
+- macOS, Linux, or Windows with a compatible Docker daemon
+- All devices (iPhone + Mac/Linux) on the same local network
+
+**Build and run:**
+
+```bash
+# Build image once (requires a running Docker daemon)
+docker compose build test-frames
+
+# Start with 3 frames
+docker compose up test-frames
+
+# Start with 7 frames in background
+TEST_STUB_FRAMES=7 docker compose up -d test-frames
+docker compose logs -f test-frames
+
+# On macOS Docker Desktop, this can help discovery/reachability from iPhone:
+TEST_STUB_ADVERTISED_IP=<your-mac-lan-ip> TEST_STUB_FRAMES=7 docker compose up -d test-frames
+
+# Stop
+docker compose down
+```
+
+**Each test frame:**
+- Advertises via mDNS with name `Photo Frame (Test Frame N)`
+- Runs a mock HTTP API on localhost port `9000 + N`
+- Mirrors the current iOS-facing endpoints: `/api/info`, `/api/config`, `/api/photos`, `/api/photos/list`, `/api/photos/<filename>`, and `/api/restart`
+- Supports config updates, in-memory uploads, deletions, and placeholder thumbnail/image responses for gallery testing
+- Stores test changes in memory only; restarting the stub resets the photo set
+
+**Testing scenarios:**
+- 1 frame: test single-device UI and discovery
+- 3–5 frames: test list sorting, reachability toggling, multi-frame navigation
+- 10+ frames: test scrolling and performance with many devices
+
+### Direct Python Usage (Without Docker)
+
+If you don't have Docker, use a small virtual environment for the stub dependencies:
+
+```bash
+python3 -m venv .venv-test-stub
+source .venv-test-stub/bin/activate
+pip install -r requirements-test-stub.txt
+
+# Run with default 3 frames
+python3 scripts/test_stub.py
+
+# Run with custom frame count
+python3 scripts/test_stub.py --frames 7
+
+# Stop with Ctrl+C, then deactivate when done
+deactivate
+```
+
+### Developer build checks
+
+```bash
+# Python sources
+python3 -m compileall api portal scripts
+
+# iOS app (simulator build)
+xcodebuild -project ios/PhotoFrameRemote/PhotoFrameRemote.xcodeproj \
+  -scheme FancyFrame-std \
+  -sdk iphonesimulator \
+  -destination 'generic/platform=iOS Simulator' \
+  CODE_SIGNING_ALLOWED=NO build
+
+# Docker test stub (requires Docker Desktop or another running daemon)
+docker compose build test-frames
 ```
 
 ## License

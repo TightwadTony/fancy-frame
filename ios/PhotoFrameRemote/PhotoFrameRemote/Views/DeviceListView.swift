@@ -35,6 +35,7 @@ struct DeviceListView: View {
                                     FrameRowView(frame: frame)
                                         .padding(.horizontal, 14)
                                         .padding(.vertical, 12)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
                                         .background(Color(.secondarySystemGroupedBackground))
                                         .clipShape(RoundedRectangle(cornerRadius: 18))
                                 }

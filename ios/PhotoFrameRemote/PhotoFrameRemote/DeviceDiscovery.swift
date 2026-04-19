@@ -20,8 +20,17 @@ final class PhotoFrame: Identifiable {
     }
 
     var api: PhotoFrameAPI? {
-        guard let host else { return nil }
-        guard let url = URL(string: "http://\(host):\(port)/") else { return nil }
+        guard let rawHost = host?.trimmingCharacters(in: .whitespacesAndNewlines), !rawHost.isEmpty else {
+            return nil
+        }
+
+        var components = URLComponents()
+        components.scheme = "http"
+        components.host = rawHost.trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+        components.port = port
+        components.path = "/"
+
+        guard let url = components.url else { return nil }
         return PhotoFrameAPI(baseURL: url)
     }
 
@@ -33,12 +42,16 @@ final class PhotoFrame: Identifiable {
     }
 
     func update(host: String, port: Int, reachable: Bool) {
-        self.host        = host
-        self.port        = port
-        self.isReachable = reachable
-        if reachable {
-            self.ipAddress = host
+        let trimmedHost = host.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedHost.isEmpty {
+            self.host = trimmedHost
+            if reachable {
+                self.ipAddress = trimmedHost.trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+            }
         }
+
+        self.port = port
+        self.isReachable = reachable
     }
 
     func updateInfo(hostname: String?, ipAddress: String?) {
@@ -70,6 +83,7 @@ final class DeviceDiscovery {
     private var connections: [String: NWConnection] = [:]
     private var lastDisplayNameFetchAt: [String: Date] = [:]
     private let displayNameRefreshInterval: TimeInterval = 60
+    private let injectedStubIDPrefix = "stub://"
 
     init() {
         start()
@@ -78,6 +92,8 @@ final class DeviceDiscovery {
     func start() {
         guard browser == nil else { return }
         isSearching = true
+
+        injectConfiguredStubFramesIfNeeded()
 
         let params = NWParameters()
         params.includePeerToPeer = false
@@ -122,7 +138,12 @@ final class DeviceDiscovery {
     private func handleResults(_ results: Set<NWBrowser.Result>) {
         // Remove frames no longer advertised
         let activeIDs = Set(results.map { instanceName($0) })
-        frames.removeAll { !activeIDs.contains($0.id) }
+        frames.removeAll { frame in
+            guard !frame.id.hasPrefix(injectedStubIDPrefix) else {
+                return false
+            }
+            return !activeIDs.contains(frame.id)
+        }
 
         // Add or update
         for result in results {
@@ -139,6 +160,35 @@ final class DeviceDiscovery {
         frames.sort { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
     }
 
+    private func injectConfiguredStubFramesIfNeeded() {
+        let environment = ProcessInfo.processInfo.environment
+        let host = (environment["PHOTO_FRAME_STUB_HOST"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !host.isEmpty else {
+            return
+        }
+
+        let count = max(Int(environment["PHOTO_FRAME_STUB_COUNT"] ?? "") ?? 0, 0)
+        guard count > 0 else {
+            return
+        }
+
+        let startPort = Int(environment["PHOTO_FRAME_STUB_START_PORT"] ?? "") ?? 9000
+
+        for index in 0..<count {
+            let frameID = "\(injectedStubIDPrefix)\(host):\(startPort + index)"
+            let fallbackName = "Test Frame \(index + 1)"
+
+            if frames.first(where: { $0.id == frameID }) == nil {
+                let frame = PhotoFrame(id: frameID, name: fallbackName, host: host, port: startPort + index)
+                frame.update(host: host, port: startPort + index, reachable: true)
+                frames.append(frame)
+                Task { await self.refreshDisplayNameIfNeeded(forID: frameID) }
+            }
+        }
+
+        frames.sort { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+    }
+
     private func resolve(_ result: NWBrowser.Result) {
         let id = instanceName(result)
 
@@ -149,15 +199,18 @@ final class DeviceDiscovery {
 
         connection.stateUpdateHandler = { [weak self] state in
             DispatchQueue.main.async {
-                guard let self, let frame = self.frames.first(where: { $0.id == id }) else { return }
+                guard let self,
+                      self.connections[id] === connection,
+                      let frame = self.frames.first(where: { $0.id == id }) else {
+                    return
+                }
+
                 switch state {
                 case .ready:
-                    if let path = connection.currentPath,
-                       let endpoint = path.remoteEndpoint {
-                        let (host, port) = self.extractHostPort(from: endpoint, result: result)
-                        frame.update(host: host, port: port, reachable: true)
-                        Task { await self.refreshDisplayNameIfNeeded(forID: id) }
-                    }
+                    let endpoint = connection.currentPath?.remoteEndpoint ?? result.endpoint
+                    let (host, port) = self.extractHostPort(from: endpoint, result: result)
+                    frame.update(host: host, port: port, reachable: true)
+                    Task { await self.refreshDisplayNameIfNeeded(forID: id) }
                 case .failed, .cancelled:
                     frame.update(host: frame.host ?? "", port: frame.port, reachable: false)
                 default:
@@ -170,16 +223,17 @@ final class DeviceDiscovery {
     }
 
     private func extractHostPort(from endpoint: NWEndpoint, result: NWBrowser.Result) -> (String, Int) {
-        // Try to get the IP from the resolved path endpoint
         if case .hostPort(let host, let port) = endpoint {
-            // Strip zone identifier (e.g. "%en0") — invalid in URLs
-            let hostStr = "\(host)".components(separatedBy: "%").first ?? "\(host)"
-            return (hostStr, Int(port.rawValue))
+            let rawHost = "\(host)".components(separatedBy: "%").first ?? "\(host)"
+            let normalizedHost = rawHost.contains(":") ? "[\(rawHost)]" : rawHost
+            return (normalizedHost, Int(port.rawValue))
         }
-        // Fallback: parse from the browser result endpoint
+
         if case .service(let name, _, let domain, _) = result.endpoint {
-            return ("\(name).\(domain)", 8080)
+            let fqdn = "\(name).\(domain)".trimmingCharacters(in: CharacterSet(charactersIn: "."))
+            return (fqdn, 8080)
         }
+
         return ("unknown", 8080)
     }
 

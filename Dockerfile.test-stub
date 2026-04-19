@@ -1,0 +1,20 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Update pip, setuptools, wheel
+RUN pip install --upgrade pip setuptools wheel
+
+# Install test-stub dependencies
+COPY requirements-test-stub.txt .
+RUN pip install -r requirements-test-stub.txt
+
+# Copy test stub script
+COPY scripts/test_stub.py .
+
+# Verify installation
+RUN python3 -c "import zeroconf; print(f'zeroconf {zeroconf.__version__} OK')"
+
+# Default to 3 frames; override with --frames when running
+ENTRYPOINT ["python3", "test_stub.py"]
+CMD ["--frames", "3"]
