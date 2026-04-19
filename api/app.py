@@ -35,9 +35,11 @@ app = Flask(__name__)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 logger = logging.getLogger('photo-frame-api')
 
-CONFIG_FILE = Path('/srv/photos/photo-frame.conf')
-PHOTOS_DIR  = Path('/srv/photos')
+CONFIG_FILE    = Path('/srv/photos/photo-frame.conf')
+PHOTOS_DIR     = Path('/srv/photos')
 THUMBNAIL_CACHE_DIR = Path('/var/lib/photo-frame/thumb-cache')
+SMB_CONF       = Path('/etc/samba/smb.conf')
+SMB_SHARE_NAME = 'photos'
 THUMBNAIL_LOCK = threading.Semaphore(1)
 
 VALID_TRANSITIONS = {'crossfade', 'fade_to_black', 'wipe'}
@@ -485,6 +487,247 @@ def restart():
     # Fork off the reboot so the response can be delivered first
     subprocess.Popen(['bash', '-c', 'sleep 1 && systemctl reboot'])
     return jsonify({'status': 'rebooting'}), 202
+
+
+# ---------------------------------------------------------------------------
+# Samba helpers
+# ---------------------------------------------------------------------------
+
+def _read_samba_settings() -> dict:
+    """Parse /etc/samba/smb.conf to get photo-frame share settings."""
+    result: dict = {'guest_access': False, 'username': None}
+    try:
+        in_share = False
+        valid_users: str | None = None
+        force_user:  str | None = None
+        for line in SMB_CONF.read_text().splitlines():
+            stripped = line.strip()
+            if re.match(rf'^\[{re.escape(SMB_SHARE_NAME)}\]\s*$', stripped, re.IGNORECASE):
+                in_share = True
+                continue
+            if in_share and stripped.startswith('['):
+                in_share = False
+                continue
+            if in_share and '=' in stripped and not stripped.startswith('#'):
+                key, _, val = stripped.partition('=')
+                key = key.strip().lower()
+                val = val.strip()
+                if key == 'guest ok' and val.lower() in ('yes', 'true', '1'):
+                    result['guest_access'] = True
+                elif key == 'valid users':
+                    valid_users = val
+                elif key == 'force user':
+                    force_user = val
+        # In credentials mode the login account is 'valid users';
+        # in guest mode there is no 'valid users' but 'force user' names the OS user.
+        result['username'] = valid_users or force_user
+    except OSError:
+        pass
+    return result
+
+
+def _write_samba_share(guest_access: bool, username: str) -> None:
+    """Rewrite the PHOTO-FRAME SHARE block and update map-to-guest in smb.conf."""
+    try:
+        text = SMB_CONF.read_text()
+    except OSError as exc:
+        raise RuntimeError(f'Could not read {SMB_CONF}: {exc}') from exc
+
+    if guest_access:
+        new_block = (
+            '# BEGIN PHOTO-FRAME SHARE\n'
+            f'[{SMB_SHARE_NAME}]\n'
+            '   path = /srv/photos\n'
+            '   browseable = yes\n'
+            '   read only = no\n'
+            '   guest ok = yes\n'
+            '   guest only = yes\n'
+            f'   force user = {username}\n'
+            '   create mask = 0644\n'
+            '   directory mask = 0755\n'
+            '# END PHOTO-FRAME SHARE'
+        )
+    else:
+        new_block = (
+            '# BEGIN PHOTO-FRAME SHARE\n'
+            f'[{SMB_SHARE_NAME}]\n'
+            '   path = /srv/photos\n'
+            '   browseable = yes\n'
+            '   read only = no\n'
+            '   create mask = 0644\n'
+            '   directory mask = 0755\n'
+            f'   valid users = {username}\n'
+            '# END PHOTO-FRAME SHARE'
+        )
+
+    if '# BEGIN PHOTO-FRAME SHARE' in text and '# END PHOTO-FRAME SHARE' in text:
+        text = re.sub(
+            r'# BEGIN PHOTO-FRAME SHARE.*?# END PHOTO-FRAME SHARE',
+            new_block,
+            text,
+            flags=re.DOTALL,
+        )
+    else:
+        text += f'\n{new_block}\n'
+
+    # Keep map-to-guest in [global] in sync with guest_access
+    if guest_access:
+        if re.search(r'^\s*map to guest\s*=', text, re.MULTILINE | re.IGNORECASE):
+            # Normalize any existing value to 'Bad User'
+            text = re.sub(
+                r'^[ \t]*map to guest[ \t]*=[^\n]*',
+                '   map to guest = Bad User',
+                text,
+                flags=re.MULTILINE | re.IGNORECASE,
+            )
+        else:
+            text = re.sub(
+                r'(^\s*\[global\]\s*$)',
+                r'\1\n   map to guest = Bad User',
+                text,
+                count=1,
+                flags=re.MULTILINE | re.IGNORECASE,
+            )
+    else:
+        # Remove the whole line (including its trailing newline) to preserve formatting
+        text = re.sub(r'^[ \t]*map to guest[ \t]*=[^\n]*\n?', '', text,
+                      flags=re.MULTILINE | re.IGNORECASE)
+
+    SMB_CONF.write_text(text)
+
+
+class SambaVerificationError(Exception):
+    """Raised when the Samba password cannot be verified due to an operational problem."""
+
+
+def _verify_samba_password(username: str, password: str) -> bool:
+    """Return True if credentials are correct, False if incorrect.
+
+    Raises SambaVerificationError if verification could not be performed
+    (smbclient missing, smbd not running, timeout, etc.).
+    """
+    try:
+        env = os.environ.copy()
+        env['PASSWD'] = password
+        result = subprocess.run(
+            ['smbclient', f'//127.0.0.1/{SMB_SHARE_NAME}', '-U', username, '-c', 'quit'],
+            capture_output=True,
+            timeout=10,
+            env=env,
+        )
+        if result.returncode == 0:
+            return True
+        stderr = result.stderr.decode(errors='replace').lower()
+        if 'nt_status_logon_failure' in stderr or 'nt_status_access_denied' in stderr:
+            return False
+        raise SambaVerificationError(f'smbclient exited with code {result.returncode}')
+    except subprocess.TimeoutExpired as exc:
+        raise SambaVerificationError('smbclient timed out') from exc
+    except FileNotFoundError as exc:
+        raise SambaVerificationError('smbclient is not installed') from exc
+
+
+def _change_samba_password(username: str, new_password: str) -> None:
+    """Change the Samba password for username (must be run as root)."""
+    proc = subprocess.run(
+        ['smbpasswd', '-s', username],
+        input=f'{new_password}\n{new_password}\n',
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(f'smbpasswd failed: {proc.stderr.strip()}')
+
+
+# ---------------------------------------------------------------------------
+# Samba routes
+# ---------------------------------------------------------------------------
+
+@app.route('/api/samba')
+def get_samba():
+    """Return current Samba share settings."""
+    return jsonify(_read_samba_settings())
+
+
+@app.route('/api/samba/password', methods=['POST'])
+def change_samba_password():
+    """
+    Change the Samba share password.
+
+    Requires a JSON body with:
+      current_password (string) — the existing password to verify
+      new_password     (string) — the desired new password
+    """
+    data = request.get_json(silent=True)
+    if not data or not isinstance(data, dict):
+        return jsonify({'error': 'Request body must be a JSON object'}), 400
+
+    current_password = data.get('current_password', '')
+    new_password     = data.get('new_password', '')
+
+    if not isinstance(current_password, str) or not current_password:
+        return jsonify({'error': 'current_password is required'}), 422
+    if not isinstance(new_password, str) or not new_password:
+        return jsonify({'error': 'new_password is required'}), 422
+    if len(new_password) < 6:
+        return jsonify({'error': 'new_password must be at least 6 characters'}), 422
+
+    settings = _read_samba_settings()
+    if settings.get('guest_access'):
+        return jsonify({'error': 'Cannot change password while guest access is enabled'}), 422
+
+    username = settings.get('username')
+    if not username:
+        return jsonify({'error': 'Could not determine Samba username from configuration'}), 500
+
+    try:
+        verified = _verify_samba_password(username, current_password)
+    except SambaVerificationError:
+        logger.exception('Could not verify Samba password for user %s', username)
+        return jsonify({'error': 'Could not verify the current password. Please try again later.'}), 503
+    if not verified:
+        return jsonify({'error': 'Current password is incorrect'}), 401
+
+    try:
+        _change_samba_password(username, new_password)
+    except RuntimeError:
+        logger.exception('smbpasswd failed for user %s', username)
+        return jsonify({'error': 'Failed to change password. Please try again.'}), 500
+
+    return jsonify({'status': 'ok'})
+
+
+@app.route('/api/samba', methods=['PATCH'])
+def patch_samba():
+    """
+    Update Samba share guest-access setting.
+
+    Accepts a JSON body with:
+      guest_access (bool) — true to allow anonymous access, false to require credentials
+    """
+    data = request.get_json(silent=True)
+    if not data or not isinstance(data, dict):
+        return jsonify({'error': 'Request body must be a JSON object'}), 400
+
+    if 'guest_access' not in data:
+        return jsonify({'error': 'guest_access field is required'}), 422
+    if not isinstance(data['guest_access'], bool):
+        return jsonify({'error': 'guest_access must be a boolean'}), 422
+
+    settings = _read_samba_settings()
+    username = settings.get('username')
+    if not username:
+        return jsonify({'error': 'Could not determine Samba username from configuration'}), 500
+
+    try:
+        _write_samba_share(data['guest_access'], username)
+        subprocess.run(['systemctl', 'reload', 'smbd'], check=True, timeout=10)
+    except (RuntimeError, OSError, subprocess.SubprocessError):
+        logger.exception('Failed to update Samba share configuration')
+        return jsonify({'error': 'Failed to update share configuration. Please try again.'}), 500
+
+    return jsonify(_read_samba_settings())
 
 
 # ---------------------------------------------------------------------------
