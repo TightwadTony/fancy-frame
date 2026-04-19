@@ -572,7 +572,15 @@ def _write_samba_share(guest_access: bool, username: str) -> None:
 
     # Keep map-to-guest in [global] in sync with guest_access
     if guest_access:
-        if not re.search(r'^\s*map to guest\s*=', text, re.MULTILINE | re.IGNORECASE):
+        if re.search(r'^\s*map to guest\s*=', text, re.MULTILINE | re.IGNORECASE):
+            # Normalize any existing value to 'Bad User'
+            text = re.sub(
+                r'^[ \t]*map to guest[ \t]*=[^\n]*',
+                '   map to guest = Bad User',
+                text,
+                flags=re.MULTILINE | re.IGNORECASE,
+            )
+        else:
             text = re.sub(
                 r'(^\s*\[global\]\s*$)',
                 r'\1\n   map to guest = Bad User',
@@ -588,8 +596,16 @@ def _write_samba_share(guest_access: bool, username: str) -> None:
     SMB_CONF.write_text(text)
 
 
+class SambaVerificationError(Exception):
+    """Raised when the Samba password cannot be verified due to an operational problem."""
+
+
 def _verify_samba_password(username: str, password: str) -> bool:
-    """Return True if the given Samba password authenticates for username."""
+    """Return True if credentials are correct, False if incorrect.
+
+    Raises SambaVerificationError if verification could not be performed
+    (smbclient missing, smbd not running, timeout, etc.).
+    """
     try:
         env = os.environ.copy()
         env['PASSWD'] = password
@@ -599,9 +615,16 @@ def _verify_samba_password(username: str, password: str) -> bool:
             timeout=10,
             env=env,
         )
-        return result.returncode == 0
-    except Exception:
-        return False
+        if result.returncode == 0:
+            return True
+        stderr = result.stderr.decode(errors='replace').lower()
+        if 'nt_status_logon_failure' in stderr or 'nt_status_access_denied' in stderr:
+            return False
+        raise SambaVerificationError(f'smbclient exited with code {result.returncode}')
+    except subprocess.TimeoutExpired as exc:
+        raise SambaVerificationError('smbclient timed out') from exc
+    except FileNotFoundError as exc:
+        raise SambaVerificationError('smbclient is not installed') from exc
 
 
 def _change_samba_password(username: str, new_password: str) -> None:
@@ -658,7 +681,12 @@ def change_samba_password():
     if not username:
         return jsonify({'error': 'Could not determine Samba username from configuration'}), 500
 
-    if not _verify_samba_password(username, current_password):
+    try:
+        verified = _verify_samba_password(username, current_password)
+    except SambaVerificationError:
+        logger.exception('Could not verify Samba password for user %s', username)
+        return jsonify({'error': 'Could not verify the current password. Please try again later.'}), 503
+    if not verified:
         return jsonify({'error': 'Current password is incorrect'}), 401
 
     try:

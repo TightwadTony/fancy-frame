@@ -6,10 +6,12 @@ struct SambaSettingsView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var settings: SambaSettings?
-    @State private var isLoading   = true
-    @State private var isSaving    = false
+    @State private var isLoading        = true
+    @State private var isSaving         = false
     @State private var error: String?
     @State private var showEnableGuestConfirm = false
+    /// Optimistic pending value while a network save is in flight.
+    @State private var pendingGuestAccess: Bool? = nil
 
     var body: some View {
         Form {
@@ -42,7 +44,7 @@ struct SambaSettingsView: View {
                 }
             } else {
                 guestAccessSection
-                if settings?.guestAccess == false {
+                if (pendingGuestAccess ?? settings?.guestAccess) == false {
                     passwordSection
                 }
             }
@@ -72,7 +74,7 @@ struct SambaSettingsView: View {
         Section {
             Toggle(isOn: guestAccessBinding) {
                 Label("Allow Guest Access", systemImage: "person.2.fill")
-                    .foregroundStyle(settings?.guestAccess == true ? .orange : .primary)
+                    .foregroundStyle((pendingGuestAccess ?? settings?.guestAccess ?? false) ? .orange : .primary)
             }
             .tint(.orange)
             .disabled(isSaving)
@@ -96,7 +98,7 @@ struct SambaSettingsView: View {
 
     private var guestAccessBinding: Binding<Bool> {
         Binding(
-            get: { settings?.guestAccess ?? false },
+            get: { pendingGuestAccess ?? settings?.guestAccess ?? false },
             set: { newValue in
                 if newValue {
                     showEnableGuestConfirm = true
@@ -125,13 +127,16 @@ struct SambaSettingsView: View {
 
     private func setGuestAccess(_ enabled: Bool) {
         guard let api = frame.api else { return }
+        pendingGuestAccess = enabled  // optimistic update — toggle reflects new state immediately
         isSaving = true
         Task {
             do {
                 settings = try await api.setSambaGuestAccess(enabled)
             } catch {
+                pendingGuestAccess = nil  // revert on error
                 self.error = error.localizedDescription
             }
+            pendingGuestAccess = nil
             isSaving = false
         }
     }
