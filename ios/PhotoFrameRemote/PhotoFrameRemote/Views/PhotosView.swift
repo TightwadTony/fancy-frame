@@ -9,6 +9,7 @@ struct PhotosView: View {
 
     @State private var photoCount: Int?
     @State private var isLoading = true
+    @State private var uploadPreference: UploadSizePreset
     @State private var showPicker = false
     @State private var uploads: [UploadItem] = []
     @State private var isUploading = false
@@ -18,6 +19,11 @@ struct PhotosView: View {
     @State private var showDeleteConfirmation = false
     @State private var error: String?
     @StateObject private var thumbnailCache = ThumbnailCache()
+
+    init(frame: PhotoFrame) {
+        self.frame = frame
+        _uploadPreference = State(initialValue: FrameUploadPreferenceStore.load(for: frame))
+    }
 
     var body: some View {
         ScrollView {
@@ -132,19 +138,59 @@ struct PhotosView: View {
             }
         }
         .task { await loadPhotos() }
+        .onChange(of: uploadPreference) { _, newValue in
+            FrameUploadPreferenceStore.save(newValue, for: frame)
+        }
     }
 
     private var compactInfoCard: some View {
-        HStack(spacing: 10) {
-            if isLoading {
-                ProgressView()
-                    .scaleEffect(0.7)
-            } else {
-                Image(systemName: "photo.stack")
-                    .foregroundStyle(.secondary)
-                Text(photoCount.map { "\($0) photo\($0 == 1 ? "" : "s") on frame" } ?? "Unknown")
-                    .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                if isLoading {
+                    ProgressView()
+                        .scaleEffect(0.7)
+                } else {
+                    Image(systemName: "photo.stack")
+                        .foregroundStyle(.secondary)
+                    Text(photoCount.map { "\($0) photo\($0 == 1 ? "" : "s") on frame" } ?? "Unknown")
+                        .foregroundStyle(.secondary)
+                }
             }
+
+            Divider()
+
+            HStack(spacing: 10) {
+                Label("Upload Size", systemImage: "arrow.up.circle")
+                    .foregroundStyle(.secondary)
+
+                Spacer()
+
+                Menu {
+                    ForEach(UploadSizePreset.allCases) { preset in
+                        Button {
+                            uploadPreference = preset
+                        } label: {
+                            if preset == uploadPreference {
+                                Label(preset.menuTitle, systemImage: "checkmark")
+                            } else {
+                                Text(preset.menuTitle)
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Text(uploadPreference.shortTitle)
+                            .fontWeight(.semibold)
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.caption2)
+                    }
+                    .foregroundStyle(.tint)
+                }
+            }
+
+            Text("Uploads for this frame are resized to \(uploadPreference.descriptionText) at 85% JPEG quality.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 14)
@@ -198,20 +244,21 @@ struct PhotosView: View {
 
     private func startUploads(_ selections: [PhotoSelection]) {
         let newItems = selections.map { UploadItem(name: $0.suggestedFilename) }
+        let uploadPreset = uploadPreference
         uploads.append(contentsOf: newItems)
         isUploading = true
 
         Task {
             for (index, selection) in selections.enumerated() {
                 let item = newItems[index]
-                await uploadOne(selection: selection, item: item)
+                await uploadOne(selection: selection, item: item, preset: uploadPreset)
             }
             isUploading = false
             await loadPhotos()
         }
     }
 
-    private func uploadOne(selection: PhotoSelection, item: UploadItem) async {
+    private func uploadOne(selection: PhotoSelection, item: UploadItem, preset: UploadSizePreset) async {
         guard let api = frame.api else {
             item.state = .failed("Frame not reachable")
             return
@@ -219,7 +266,10 @@ struct PhotosView: View {
         item.state = .uploading
 
         do {
-            let (jpegData, filename) = try await selection.loadAsJPEG()
+            let (jpegData, filename) = try await selection.loadAsJPEG(
+                maxPixelSize: preset.maximumPixelSize,
+                compressionQuality: preset.compressionQuality
+            )
             try await api.uploadPhoto(jpegData, filename: filename)
             item.state = .done
         } catch let uploadError {
@@ -481,33 +531,137 @@ private struct UploadRowView: View {
     }
 }
 
+// MARK: - Upload sizing
+
+private enum UploadSizePreset: String, CaseIterable, Identifiable {
+    case hd720
+    case fullHD
+    case qhd1440
+    case original
+
+    var id: String { rawValue }
+
+    var shortTitle: String {
+        switch self {
+        case .hd720: return "720p"
+        case .fullHD: return "1080p"
+        case .qhd1440: return "1440p"
+        case .original: return "Original"
+        }
+    }
+
+    var menuTitle: String {
+        switch self {
+        case .hd720: return "720p (1280 × 720)"
+        case .fullHD: return "1080p (1920 × 1080)"
+        case .qhd1440: return "1440p (2560 × 1440)"
+        case .original: return "Original size"
+        }
+    }
+
+    var maximumPixelSize: CGFloat? {
+        switch self {
+        case .hd720: return 1280
+        case .fullHD: return 1920
+        case .qhd1440: return 2560
+        case .original: return nil
+        }
+    }
+
+    var descriptionText: String {
+        switch self {
+        case .hd720: return "720p"
+        case .fullHD: return "1080p"
+        case .qhd1440: return "1440p"
+        case .original: return "their original size"
+        }
+    }
+
+    var compressionQuality: CGFloat { 0.85 }
+}
+
+private enum FrameUploadPreferenceStore {
+    static func load(for frame: PhotoFrame) -> UploadSizePreset {
+        let rawValue = UserDefaults.standard.string(forKey: key(for: frame))
+        return rawValue.flatMap(UploadSizePreset.init(rawValue:)) ?? .fullHD
+    }
+
+    static func save(_ preset: UploadSizePreset, for frame: PhotoFrame) {
+        UserDefaults.standard.set(preset.rawValue, forKey: key(for: frame))
+    }
+
+    private static func key(for frame: PhotoFrame) -> String {
+        let identity = frame.host ?? frame.hostname ?? frame.id
+        return "photoFrame.uploadPreset.\(identity)"
+    }
+}
+
 // MARK: - Photo picker wrapper
 
 struct PhotoSelection: @unchecked Sendable {
     let provider: NSItemProvider
     let suggestedFilename: String
 
-    func loadAsJPEG() async throws -> (Data, String) {
+    func loadAsJPEG(maxPixelSize: CGFloat?, compressionQuality: CGFloat = 0.85) async throws -> (Data, String) {
         let filename = URL(fileURLWithPath: suggestedFilename)
             .deletingPathExtension().lastPathComponent + ".jpg"
-        let data = try await loadJPEGData(from: provider)
+        let data = try await loadJPEGData(
+            from: provider,
+            maxPixelSize: maxPixelSize,
+            compressionQuality: compressionQuality
+        )
         return (data, filename)
     }
 
-    private nonisolated func loadJPEGData(from provider: NSItemProvider) async throws -> Data {
+    private nonisolated func loadJPEGData(
+        from provider: NSItemProvider,
+        maxPixelSize: CGFloat?,
+        compressionQuality: CGFloat
+    ) async throws -> Data {
         try await withCheckedThrowingContinuation { continuation in
             _ = provider.loadObject(ofClass: UIImage.self) { object, error in
                 if let error {
                     continuation.resume(throwing: error)
                     return
                 }
-                guard let image = object as? UIImage,
-                      let data = image.jpegData(compressionQuality: 0.85) else {
+                guard let image = object as? UIImage else {
+                    continuation.resume(throwing: UploadError.conversionFailed)
+                    return
+                }
+
+                let prepared = image.resizedForUpload(maxPixelSize: maxPixelSize)
+                guard let data = prepared.jpegData(compressionQuality: compressionQuality) else {
                     continuation.resume(throwing: UploadError.conversionFailed)
                     return
                 }
                 continuation.resume(returning: data)
             }
+        }
+    }
+}
+
+private extension UIImage {
+    func resizedForUpload(maxPixelSize: CGFloat?) -> UIImage {
+        guard let maxPixelSize, maxPixelSize > 0 else {
+            return self
+        }
+
+        let sourceSize = size
+        let largestSide = max(sourceSize.width, sourceSize.height)
+        guard largestSide > maxPixelSize else {
+            return self
+        }
+
+        let scale = maxPixelSize / largestSide
+        let targetSize = CGSize(
+            width: max(1, (sourceSize.width * scale).rounded(.toNearestOrEven)),
+            height: max(1, (sourceSize.height * scale).rounded(.toNearestOrEven))
+        )
+
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        return UIGraphicsImageRenderer(size: targetSize, format: format).image { _ in
+            draw(in: CGRect(origin: .zero, size: targetSize))
         }
     }
 }
