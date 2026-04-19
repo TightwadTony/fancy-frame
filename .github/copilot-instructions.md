@@ -21,7 +21,8 @@ photo-frame/
 │   └── avahi-photo-frame.service  # mDNS advertisement: _photoframe._tcp :8080
 ├── ios/                        # Native iOS app
 │   └── PhotoFrameRemote/
-│       ├── Package.swift       # Swift Package, iOS 17+, no external deps
+│       ├── Package.swift       # Swift Package metadata, iOS 17+
+│       ├── PhotoFrameRemote.xcodeproj/
 │       └── PhotoFrameRemote/
 │           ├── PhotoFrameRemoteApp.swift
 │           ├── ContentView.swift
@@ -31,6 +32,8 @@ photo-frame/
 │           └── Views/
 │               ├── DeviceListView.swift
 │               ├── DeviceDetailView.swift
+│               ├── PhotosView.swift
+│               ├── SettingsView.swift
 │               └── TransitionsPickerView.swift
 ├── portal/                     # Flask captive-portal app (AP mode only, port 80)
 │   ├── app.py
@@ -42,7 +45,10 @@ photo-frame/
 │   ├── connect_wifi.sh
 │   ├── start_setup_mode.sh
 │   ├── stop_setup_mode.sh
+│   ├── test_stub.py            # Local fake-frame simulator for iOS testing
 │   └── install_initial_setup.sh  # Full installer (run as root on the Pi)
+├── docker-compose.yml          # Launches the local test stub
+├── Dockerfile.test-stub        # Test-stub image
 └── systemd/                    # Systemd service units
     ├── photo-frame.service             # Slideshow (xinit, always restart)
     ├── photo-frame-wifi-bootstrap.service
@@ -93,6 +99,9 @@ it changes (systemd restarts it with new settings).
 | GET | `/api/info` | `hostname`, `ip_address`, `uptime_secs` |
 | GET | `/api/config` | All slideshow config values (typed) |
 | PATCH | `/api/config` | Update any subset of config values |
+| GET / POST | `/api/photos` | Photo count and uploads |
+| GET | `/api/photos/list` | List photo metadata for the gallery |
+| GET / DELETE | `/api/photos/<filename>` | Serve or delete a specific photo |
 | POST | `/api/restart` | Reboot the Pi (`202 Accepted`) |
 
 Config keys in JSON use the same names as the `.conf` file.
@@ -112,17 +121,21 @@ Each result becomes a `PhotoFrame` `@Observable` object with `name`, `host`,
 `port`, and `isReachable`.
 
 ### API client
-`PhotoFrameAPI.swift` wraps all four endpoints with `async/await` + `URLSession`.
-`PhotoFrameConfig` and `PhotoFrameInfo` are `Codable`.
+`PhotoFrameAPI.swift` wraps discovery-related info, slideshow configuration,
+photo list/upload/delete, and restart operations using `async/await` + `URLSession`.
+`PhotoFrameConfig`, `PhotoFrameInfo`, and the photo models are `Codable`.
 
 ### Screen flow
 ```
-DeviceListView  ──tap──▶  DeviceDetailView  ──tap "Transitions"──▶  TransitionsPickerView
+DeviceListView  ──tap──▶  DeviceDetailView
+                           ├──▶ TransitionsPickerView
+                           ├──▶ SettingsView
+                           └──▶ PhotosView
 ```
 
 `DeviceDetailView` loads config + info on appear, tracks local edits, shows a
-"Save Changes" toolbar button only when there are unsaved changes, and has a
-destructive "Restart Photo Frame…" button with a confirmation alert.
+"Save Changes" toolbar button only when there are unsaved changes, and links to
+both slideshow settings and photo management.
 
 ---
 
@@ -134,7 +147,7 @@ destructive "Restart Photo Frame…" button with a confirmation alert.
    captive portal at `http://192.168.4.1/`, management API does **not** start
 4. User enters credentials → `connect_wifi.sh` → reboot → back to step 1
 
-**Manual re-onboarding**: `sudo touch /boot/firmware/force-onboarding && sudo reboot`
+**Manual re-onboarding**: `sudo touch /boot/firmware/force-onboarding && sudo reboot` (older images also accept `/boot/force-onboarding`)
 
 ---
 
@@ -154,9 +167,9 @@ hostapd, dnsmasq, all systemd services, Xorg permissions, and boot flags.
 ## Development notes
 
 - **Python** (Pi scripts): standard library + `flask`, `pygame`, `Pillow`.
-  No virtualenv — system packages only (installed via `apt`).
+  The local test stub additionally uses `zeroconf`.
 - **Swift** (iOS): no linter or formatter config checked in; follow standard
-  Swift conventions. The project uses `@Observable` (Swift 5.9 macro).
+  Swift conventions. The app targets **iOS 17+** and uses `@Observable`.
 - **Shell scripts**: `bash`, `set -euo pipefail`, run as root on the Pi.
 - The `iphone` branch contains the API and iOS app additions.
   `main` has the base Pi slideshow + Wi-Fi portal.
