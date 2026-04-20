@@ -17,10 +17,12 @@ import io
 import os
 import sys
 import random
+import hashlib
 import time
 import threading
 import traceback
 import types
+from pathlib import Path
 
 import pygame
 from PIL import Image, ImageOps
@@ -29,13 +31,20 @@ from PIL import Image, ImageOps
 # Fixed constants
 # ---------------------------------------------------------------------------
 
-PHOTO_DIR         = '/var/lib/photo-frame/playable-photos'
+PHOTO_DIR         = os.environ.get('PHOTO_FRAME_PHOTO_DIR', '/srv/photos')
 CONFIG_FILE       = '/srv/photos/photo-frame.conf'
+RENDER_CACHE_DIR  = Path(os.environ.get('PHOTO_FRAME_RENDER_CACHE_DIR', '/var/lib/photo-frame/render-cache'))
 CONFIG_CHECK_SECS = 300   # re-read config every 5 minutes
 REFRESH_SECS      = int(os.environ.get('PHOTO_FRAME_REFRESH_SECONDS', '300'))
 FPS               = 20    # matches Pi Zero 2W display throughput
+RENDER_QUALITY    = int(os.environ.get('PHOTO_FRAME_RENDER_QUALITY', '88'))
 
 IMAGE_EXTS = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tif', '.tiff'}
+BLACK = (0, 0, 0)
+
+RENDER_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+_RENDER_LOCKS: dict[str, threading.Lock] = {}
+_RENDER_LOCKS_GUARD = threading.Lock()
 
 # ---------------------------------------------------------------------------
 # Image helpers
@@ -49,7 +58,49 @@ def list_photos(directory: str) -> list[str]:
         os.path.join(directory, f)
         for f in os.listdir(directory)
         if os.path.splitext(f.lower())[1] in IMAGE_EXTS
+        and not f.startswith('.')
+        and not f.startswith('._')
     )
+
+
+def _get_render_lock(cache_key: str) -> threading.Lock:
+    with _RENDER_LOCKS_GUARD:
+        return _RENDER_LOCKS.setdefault(cache_key, threading.Lock())
+
+
+def _prepare_rendered_image(path: str, size: tuple[int, int]) -> str:
+    """Create a display-ready cached JPEG for the given photo and screen size."""
+    sw, sh = size
+    source = Path(path)
+    stat = source.stat()
+    key_src = f"{source.resolve()}|{stat.st_mtime_ns}|{stat.st_size}|{sw}x{sh}|q{RENDER_QUALITY}"
+    key = hashlib.sha1(key_src.encode('utf-8')).hexdigest()
+    cache_path = RENDER_CACHE_DIR / f"{key}.jpg"
+    if cache_path.exists():
+        return str(cache_path)
+
+    render_lock = _get_render_lock(key)
+    with render_lock:
+        if cache_path.exists():
+            return str(cache_path)
+
+        with Image.open(source) as img:
+            img = ImageOps.exif_transpose(img)
+            if hasattr(img, 'draft'):
+                img.draft('RGB', size)
+            img = img.convert('RGB')
+            img.thumbnail(size, Image.LANCZOS)
+
+            canvas = Image.new('RGB', size, BLACK)
+            x = (sw - img.size[0]) // 2
+            y = (sh - img.size[1]) // 2
+            canvas.paste(img, (x, y))
+
+            tmp_path = cache_path.with_suffix('.tmp')
+            canvas.save(tmp_path, format='JPEG', quality=RENDER_QUALITY, optimize=True)
+            os.replace(tmp_path, cache_path)
+
+    return str(cache_path)
 
 
 def load_surface(path: str, size: tuple[int, int]) -> pygame.Surface | None:
@@ -58,6 +109,14 @@ def load_surface(path: str, size: tuple[int, int]) -> pygame.Surface | None:
     aspect ratio (letter/pillarboxed on black), and return a pygame Surface.
     Returns None on any error so callers can skip bad files.
     """
+    try:
+        prepared_path = _prepare_rendered_image(path, size)
+        prepared = pygame.image.load(prepared_path).convert()
+        if prepared.get_size() == size:
+            return prepared
+    except Exception as exc:
+        print(f'slideshow: cache prep fallback for {path}: {exc}', file=sys.stderr)
+
     try:
         img = Image.open(path)
         img = ImageOps.exif_transpose(img)
@@ -76,8 +135,8 @@ def load_surface(path: str, size: tuple[int, int]) -> pygame.Surface | None:
         buf.seek(0)
         pg_img = pygame.image.load(buf).convert()
 
-        surface = pygame.Surface(size)
-        surface.fill((0, 0, 0))
+        surface = pygame.Surface(size).convert()
+        surface.fill(BLACK)
         surface.blit(pg_img, ((sw - nw) // 2, (sh - nh) // 2))
         return surface
 
@@ -89,12 +148,18 @@ def load_surface(path: str, size: tuple[int, int]) -> pygame.Surface | None:
 # Transitions
 # ---------------------------------------------------------------------------
 
-BLACK = (0, 0, 0)
+
+def _tick(clock: pygame.time.Clock) -> None:
+    """Use busy-loop pacing when available for steadier frame timing."""
+    if hasattr(clock, 'tick_busy_loop'):
+        clock.tick_busy_loop(FPS)
+    else:
+        clock.tick(FPS)
 
 
 def _pump(clock: pygame.time.Clock) -> bool:
     """Tick clock and drain event queue. Returns False if quit requested."""
-    clock.tick(FPS)
+    _tick(clock)
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             return False
@@ -109,6 +174,7 @@ def crossfade(
     new_surf: pygame.Surface,
     duration: float,
     clock: pygame.time.Clock,
+    _scratch_black: pygame.Surface | None = None,
 ) -> bool:
     """Alpha-blend old_surf → new_surf."""
     steps = max(1, int(duration * FPS))
@@ -119,7 +185,12 @@ def crossfade(
         screen.blit(old_surf, (0, 0))
         pygame.display.flip()
         if not _pump(clock):
+            old_surf.set_alpha(None)
             return False
+
+    old_surf.set_alpha(None)
+    screen.blit(new_surf, (0, 0))
+    pygame.display.flip()
     return True
 
 
@@ -129,11 +200,12 @@ def fade_to_black(
     new_surf: pygame.Surface,
     duration: float,
     clock: pygame.time.Clock,
+    scratch_black: pygame.Surface | None = None,
 ) -> bool:
     """Fade old image to black, then fade new image in."""
     half = duration / 2
     steps = max(1, int(half * FPS))
-    black = pygame.Surface(screen.get_size())
+    black = scratch_black if scratch_black is not None else pygame.Surface(screen.get_size()).convert()
     black.fill(BLACK)
 
     # Fade out
@@ -157,6 +229,8 @@ def fade_to_black(
         if not _pump(clock):
             return False
 
+    screen.blit(new_surf, (0, 0))
+    pygame.display.flip()
     return True
 
 
@@ -166,6 +240,7 @@ def wipe(
     new_surf: pygame.Surface,
     duration: float,
     clock: pygame.time.Clock,
+    _scratch_black: pygame.Surface | None = None,
 ) -> bool:
     """Hard edge sweeps across revealing the new image."""
     sw, sh = screen.get_size()
@@ -195,6 +270,8 @@ def wipe(
         if not _pump(clock):
             return False
 
+    screen.blit(new_surf, (0, 0))
+    pygame.display.flip()
     return True
 
 
@@ -213,13 +290,15 @@ def transition(
     duration: float,
     clock: pygame.time.Clock,
     fns: list | None = None,
+    scratch_surface: pygame.Surface | None = None,
+    scratch_black: pygame.Surface | None = None,
 ) -> bool:
     """Capture the Ken Burns t=0 frame then run a random transition into it."""
-    new_frame = pygame.Surface(screen.get_size())
+    new_frame = scratch_surface if scratch_surface is not None else pygame.Surface(screen.get_size()).convert()
     new_kb.blit_at(new_frame, 0.0)
     pool = fns if fns else list(TRANSITION_FNS.values())
     fn = random.choice(pool)
-    return fn(screen, old_surf, new_frame, duration, clock)
+    return fn(screen, old_surf, new_frame, duration, clock, scratch_black)
 
 # ---------------------------------------------------------------------------
 # Ken Burns effect
@@ -296,7 +375,7 @@ def ken_burns_dwell(
         t = min(1.0, (now - start) / seconds)
         kb.blit_at(screen, t)
         pygame.display.flip()
-        clock.tick(FPS)
+        _tick(clock)
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return False
@@ -314,7 +393,7 @@ def wait(seconds: float, clock: pygame.time.Clock) -> bool:
                 return False
             if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                 return False
-        clock.tick(FPS)
+        _tick(clock)
     return True
 
 # ---------------------------------------------------------------------------
@@ -496,16 +575,24 @@ def main() -> None:
     pygame.init()
     pygame.mouse.set_visible(False)
 
-    screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+    display_flags = pygame.FULLSCREEN | pygame.DOUBLEBUF | getattr(pygame, 'HWSURFACE', 0)
+    try:
+        screen = pygame.display.set_mode((0, 0), display_flags, vsync=1)
+    except TypeError:
+        screen = pygame.display.set_mode((0, 0), display_flags)
+
     pygame.display.set_caption('Photo Frame')
     size  = screen.get_size()
     clock = pygame.time.Clock()
+    scratch_surface = pygame.Surface(size).convert()
+    scratch_black = pygame.Surface(size).convert()
+    scratch_black.fill(BLACK)
 
-    screen.fill((0, 0, 0))
+    screen.fill(BLACK)
     pygame.display.flip()
 
-    current: pygame.Surface = pygame.Surface(size)
-    current.fill((0, 0, 0))
+    current: pygame.Surface = pygame.Surface(size).convert()
+    current.fill(BLACK)
 
     photos:         list[str]  = []
     idx:            int        = 0
@@ -571,18 +658,36 @@ def main() -> None:
         # Transition and dwell.
         if next_kb is not None:
             # Ken Burns: transition into t=0 frame, then animate.
-            if not transition(screen, current, next_kb, cfg.fade_secs, clock, cfg.fns):
+            if not transition(
+                screen,
+                current,
+                next_kb,
+                cfg.fade_secs,
+                clock,
+                cfg.fns,
+                scratch_surface,
+                scratch_black,
+            ):
                 break
             dwell = max(0.0, cfg.slide_secs - cfg.fade_secs)
             if not ken_burns_dwell(screen, next_kb, dwell, clock):
                 break
             # Capture the final pan position as the base for the next transition.
-            current = pygame.Surface(size)
+            current = pygame.Surface(size).convert()
             next_kb.blit_at(current, 1.0)
         else:
             # Ken Burns disabled: simple transition into static image.
             static_kb = _StaticFrame(next_surf)
-            if not transition(screen, current, static_kb, cfg.fade_secs, clock, cfg.fns):
+            if not transition(
+                screen,
+                current,
+                static_kb,
+                cfg.fade_secs,
+                clock,
+                cfg.fns,
+                scratch_surface,
+                scratch_black,
+            ):
                 break
             dwell = max(0.0, cfg.slide_secs - cfg.fade_secs)
             if not wait(dwell, clock):
