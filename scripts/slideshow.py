@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Photo frame slideshow with smooth transitions (crossfade, fade-to-black, wipe).
+Fancy Frame slideshow with smooth transitions (crossfade, fade-to-black, wipe).
 
 Reads photos from PHOTO_DIR, displays them fullscreen with a random transition
 between each slide, and refreshes the photo list periodically to pick up
@@ -31,13 +31,13 @@ from PIL import Image, ImageOps
 # Fixed constants
 # ---------------------------------------------------------------------------
 
-PHOTO_DIR         = os.environ.get('PHOTO_FRAME_PHOTO_DIR', '/srv/photos')
-CONFIG_FILE       = '/srv/photos/photo-frame.conf'
-RENDER_CACHE_DIR  = Path(os.environ.get('PHOTO_FRAME_RENDER_CACHE_DIR', '/var/lib/photo-frame/render-cache'))
+PHOTO_DIR = os.environ.get('FANCY_FRAME_PHOTO_DIR', '/srv/photos')
+CONFIG_FILE = os.environ.get('FANCY_FRAME_CONFIG_FILE', '/srv/photos/fancy-frame.conf')
+RENDER_CACHE_DIR = Path(os.environ.get('FANCY_FRAME_RENDER_CACHE_DIR', '/var/lib/fancy-frame/render-cache'))
 CONFIG_CHECK_SECS = 300   # re-read config every 5 minutes
-REFRESH_SECS      = int(os.environ.get('PHOTO_FRAME_REFRESH_SECONDS', '300'))
-FPS               = 20    # matches Pi Zero 2W display throughput
-RENDER_QUALITY    = int(os.environ.get('PHOTO_FRAME_RENDER_QUALITY', '88'))
+REFRESH_SECS = int(os.environ.get('FANCY_FRAME_REFRESH_SECONDS', '300'))
+FPS = 20    # matches Pi Zero 2W display throughput
+RENDER_QUALITY = int(os.environ.get('FANCY_FRAME_RENDER_QUALITY', '88'))
 
 IMAGE_EXTS = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tif', '.tiff'}
 BLACK = (0, 0, 0)
@@ -443,12 +443,12 @@ class Preloader:
 # ---------------------------------------------------------------------------
 
 _DEFAULT_CONFIG = """\
-# Photo Frame Configuration
+# Fancy Frame Configuration
 # Edit this file to change slideshow behaviour.
 # Changes take effect within 5 minutes (the slideshow restarts automatically).
 
 # Friendly frame name displayed in the iPhone app
-frame_name = Photo Frame
+frame_name = Fancy Frame
 
 # Seconds each photo is displayed (including the transition)
 slide_seconds = 25
@@ -469,7 +469,7 @@ ken_burns_zoom_max = 1.20
 """
 
 _CONFIG_DEFAULTS = {
-    'frame_name':         'Photo Frame',
+    'frame_name':         'Fancy Frame',
     'slide_seconds':      '25',
     'fade_seconds':       '1.5',
     'transitions':        'crossfade, fade_to_black, wipe',
@@ -581,7 +581,7 @@ def main() -> None:
     except TypeError:
         screen = pygame.display.set_mode((0, 0), display_flags)
 
-    pygame.display.set_caption('Photo Frame')
+    pygame.display.set_caption('Fancy Frame')
     size  = screen.get_size()
     clock = pygame.time.Clock()
     scratch_surface = pygame.Surface(size).convert()

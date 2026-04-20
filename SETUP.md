@@ -1,4 +1,4 @@
-# Photo Frame Setup
+# Fancy Frame Setup
 
 This document installs a slideshow photo frame with:
 
@@ -18,7 +18,7 @@ This document installs a slideshow photo frame with:
 
 Use Raspberry Pi Imager and set advanced options before writing the card:
 
-- Set hostname (example: photo-frame)
+- Set hostname (example: fancy-frame)
 - Enable SSH
 - Set locale/timezone and Wi-Fi country
 - Optional: prefill Wi-Fi credentials for your normal network
@@ -29,7 +29,7 @@ If you do not prefill Wi-Fi, onboarding mode will start automatically after inst
 
 On your development machine:
 
-- Clone/copy this project to the Pi (for example into /home/pi/photo-frame)
+- Clone/copy this project to the Pi (for example into /home/pi/fancy-frame)
 
 On the Pi:
 
@@ -44,7 +44,7 @@ sudo bash scripts/install_initial_setup.sh
 What this does:
 
 - Installs slideshow, network, and portal dependencies
-- Copies project into /opt/photo-frame
+- Copies project into /opt/fancy-frame
 - Installs systemd services
 - Configures hostapd and dnsmasq for setup AP mode
 - Adds Samba share config for /srv/photos
@@ -66,8 +66,8 @@ Edit AP SSID/password if desired:
 
 Defaults:
 
-- SSID: PhotoFrame-Setup
-- Passphrase: PhotoFrame123
+- SSID: FancyFrame-Setup
+- Passphrase: FancyFrame123
 
 Then reboot to apply.
 
@@ -84,11 +84,11 @@ After boot, one of two states will occur:
 
 - Slideshow starts automatically
 - Photos are read from /srv/photos
-- Management API starts on port 8080 and is advertised via `_photoframe._tcp.local.`
-- The iPhone app in `ios/PhotoFrameRemote/` can discover and manage the frame on the local network
+- Management API starts on port 8080 and is advertised via `_fancyframe._tcp.local.`
+- The companion Fancy Frame iPhone app can discover and manage the frame on the local network
 - SMB share is available at:
-  - Windows: \\photo-frame\photos
-  - macOS/Linux: smb://photo-frame/photos
+  - Windows: \\fancy-frame\photos
+  - macOS/Linux: smb://fancy-frame/photos
 
 ## 9. Onboarding mode behavior
 
@@ -113,16 +113,16 @@ At next boot the file is consumed and deleted automatically.
 
 Service status:
 
-systemctl status photo-frame.service
-systemctl status photo-frame-wifi-bootstrap.service
-systemctl status photo-frame-setup-mode.service
-systemctl status photo-frame-setup-portal.service
+systemctl status fancy-frame.service
+systemctl status fancy-frame-wifi-bootstrap.service
+systemctl status fancy-frame-setup-mode.service
+systemctl status fancy-frame-setup-portal.service
 
 Logs:
 
-journalctl -u photo-frame.service -f
-journalctl -u photo-frame-wifi-bootstrap.service -f
-journalctl -u photo-frame-setup-portal.service -f
+journalctl -u fancy-frame.service -f
+journalctl -u fancy-frame-wifi-bootstrap.service -f
+journalctl -u fancy-frame-setup-portal.service -f
 
 ## 12. Directory/file map
 

@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-Photo Frame Management API
-Exposes REST endpoints for reading/writing /srv/photos/photo-frame.conf
+Fancy Frame Management API
+Exposes REST endpoints for reading and writing the slideshow config
 and triggering a system restart. Runs on port 8080.
 
-Only started when the Pi is connected to Wi-Fi (not in AP/setup mode).
-Advertised via Avahi mDNS as _photoframe._tcp so iOS clients can discover it.
+Only started when the Pi is connected to Wi-Fi, not in AP/setup mode.
+Advertised via Avahi mDNS as _fancyframe._tcp so clients can discover it.
 """
 
 from __future__ import annotations
@@ -33,11 +33,11 @@ except ImportError:  # pragma: no cover
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
-logger = logging.getLogger('photo-frame-api')
+logger = logging.getLogger('fancy-frame-api')
 
-CONFIG_FILE    = Path('/srv/photos/photo-frame.conf')
-PHOTOS_DIR     = Path('/srv/photos')
-THUMBNAIL_CACHE_DIR = Path('/var/lib/photo-frame/thumb-cache')
+CONFIG_FILE = Path('/srv/photos/fancy-frame.conf')
+PHOTOS_DIR = Path('/srv/photos')
+THUMBNAIL_CACHE_DIR = Path('/var/lib/fancy-frame/thumb-cache')
 SMB_CONF       = Path('/etc/samba/smb.conf')
 SMB_SHARE_NAME = 'photos'
 THUMBNAIL_LOCK = threading.Semaphore(1)
@@ -46,7 +46,7 @@ VALID_TRANSITIONS = {'crossfade', 'fade_to_black', 'wipe'}
 VALID_IMAGE_EXTS  = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tif', '.tiff'}
 
 CONFIG_DEFAULTS: dict[str, str] = {
-    'frame_name':         'Photo Frame',
+    'frame_name':         'Fancy Frame',
     'slide_seconds':      '25',
     'fade_seconds':       '1.5',
     'transitions':        'crossfade, fade_to_black, wipe',
@@ -536,7 +536,7 @@ def restart():
 # ---------------------------------------------------------------------------
 
 def _read_samba_settings() -> dict:
-    """Parse /etc/samba/smb.conf to get photo-frame share settings."""
+    """Parse /etc/samba/smb.conf to get Fancy Frame share settings."""
     result: dict = {'guest_access': False, 'username': None}
     try:
         in_share = False
@@ -569,7 +569,7 @@ def _read_samba_settings() -> dict:
 
 
 def _write_samba_share(guest_access: bool, username: str) -> None:
-    """Rewrite the PHOTO-FRAME SHARE block and update map-to-guest in smb.conf."""
+    """Rewrite the Fancy Frame share block and update map-to-guest in smb.conf."""
     try:
         text = SMB_CONF.read_text()
     except OSError as exc:
@@ -577,7 +577,7 @@ def _write_samba_share(guest_access: bool, username: str) -> None:
 
     if guest_access:
         new_block = (
-            '# BEGIN PHOTO-FRAME SHARE\n'
+            '# BEGIN FANCY-FRAME SHARE\n'
             f'[{SMB_SHARE_NAME}]\n'
             '   path = /srv/photos\n'
             '   browseable = yes\n'
@@ -587,11 +587,11 @@ def _write_samba_share(guest_access: bool, username: str) -> None:
             f'   force user = {username}\n'
             '   create mask = 0644\n'
             '   directory mask = 0755\n'
-            '# END PHOTO-FRAME SHARE'
+            '# END FANCY-FRAME SHARE'
         )
     else:
         new_block = (
-            '# BEGIN PHOTO-FRAME SHARE\n'
+            '# BEGIN FANCY-FRAME SHARE\n'
             f'[{SMB_SHARE_NAME}]\n'
             '   path = /srv/photos\n'
             '   browseable = yes\n'
@@ -599,12 +599,12 @@ def _write_samba_share(guest_access: bool, username: str) -> None:
             '   create mask = 0644\n'
             '   directory mask = 0755\n'
             f'   valid users = {username}\n'
-            '# END PHOTO-FRAME SHARE'
+            '# END FANCY-FRAME SHARE'
         )
 
-    if '# BEGIN PHOTO-FRAME SHARE' in text and '# END PHOTO-FRAME SHARE' in text:
+    if re.search(r'# BEGIN (?:FANCY|PHOTO)-FRAME SHARE.*?# END (?:FANCY|PHOTO)-FRAME SHARE', text, flags=re.DOTALL):
         text = re.sub(
-            r'# BEGIN PHOTO-FRAME SHARE.*?# END PHOTO-FRAME SHARE',
+            r'# BEGIN (?:FANCY|PHOTO)-FRAME SHARE.*?# END (?:FANCY|PHOTO)-FRAME SHARE',
             new_block,
             text,
             flags=re.DOTALL,

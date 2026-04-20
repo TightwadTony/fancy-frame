@@ -15,14 +15,14 @@ section "Current uptime"
 uptime || true
 cat /proc/uptime || true
 
-section "Photo frame slideshow logs (current boot)"
-journalctl -u photo-frame.service -b --no-pager -n 200 || true
+section "Fancy Frame slideshow logs (current boot)"
+journalctl -u fancy-frame.service -b --no-pager -n 200 || true
 
-section "Photo frame API logs (current boot)"
-journalctl -u photo-frame-api.service -b --no-pager -n 120 || true
+section "Fancy Frame API logs (current boot)"
+journalctl -u fancy-frame-api.service -b --no-pager -n 120 || true
 
 section "Wi-Fi bootstrap logs (current boot)"
-journalctl -u photo-frame-wifi-bootstrap.service -b --no-pager -n 120 || true
+journalctl -u fancy-frame-wifi-bootstrap.service -b --no-pager -n 120 || true
 
 section "Previous boot errors"
 journalctl -b -1 -p warning..alert --no-pager -n 200 || true
@@ -35,4 +35,4 @@ journalctl -b --no-pager | egrep -i 'xorg|pygame|sdl|drm|hdmi|vc4' | tail -n 200
 
 section "Hint"
 echo "If you see undervoltage, the likely cause is power supply or cabling."
-echo "If you see only photo-frame.service restarts with no new boot in 'last -x', the Pi did not reboot; the slideshow process crashed and systemd restarted it."
+echo "If you see only fancy-frame.service restarts with no new boot in 'last -x', the Pi did not reboot; the slideshow process crashed and systemd restarted it."

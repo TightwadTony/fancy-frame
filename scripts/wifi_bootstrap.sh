@@ -25,8 +25,8 @@ is_wifi_connected() {
 # Manual override: touch /boot/firmware/force-onboarding then reboot.
 if [[ -f "${FORCE_FLAG}" ]]; then
   rm -f "${FORCE_FLAG}"
-  systemctl start photo-frame-setup-mode.service
-  systemctl start photo-frame-setup-portal.service
+  systemctl start fancy-frame-setup-mode.service
+  systemctl start fancy-frame-setup-portal.service
   exit 0
 fi
 
@@ -39,5 +39,5 @@ for _ in $(seq 1 "${WAIT_SECONDS}"); do
   sleep 1
 done
 
-systemctl start photo-frame-setup-mode.service
-systemctl start photo-frame-setup-portal.service
+systemctl start fancy-frame-setup-mode.service
+systemctl start fancy-frame-setup-portal.service

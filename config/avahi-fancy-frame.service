@@ -1,0 +1,14 @@
+<?xml version="1.0" standalone='no'?>
+<!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+<!--
+  Advertises the Fancy Frame management API via mDNS so clients
+  can discover it automatically using Bonjour.
+  Service type: _fancyframe._tcp, port 8080.
+-->
+<service-group>
+  <name replace-wildcards="yes">Fancy Frame (%h)</name>
+  <service>
+    <type>_fancyframe._tcp</type>
+    <port>8080</port>
+  </service>
+</service-group>

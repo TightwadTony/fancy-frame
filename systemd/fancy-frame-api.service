@@ -1,14 +1,14 @@
 [Unit]
-Description=Photo Frame Management API
+Description=Fancy Frame Management API
 After=network-online.target
 Wants=network-online.target
 # Only run when on normal Wi-Fi — never during AP/onboarding mode.
-Conflicts=photo-frame-setup-mode.service
+Conflicts=fancy-frame-setup-mode.service
 
 [Service]
 Type=simple
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/usr/bin/python3 /opt/photo-frame/api/app.py
+ExecStart=/usr/bin/python3 /opt/fancy-frame/api/app.py
 Restart=always
 RestartSec=3
 

@@ -29,8 +29,8 @@ if [[ -z "${COUNTRY_ESCAPED}" ]]; then
   COUNTRY_ESCAPED="US"
 fi
 
-mkdir -p /var/lib/photo-frame
-cp /etc/wpa_supplicant/wpa_supplicant-wlan0.conf "/var/lib/photo-frame/wpa_supplicant.conf.bak.$(date +%s)" >/dev/null 2>&1 || true
+mkdir -p /var/lib/fancy-frame
+cp /etc/wpa_supplicant/wpa_supplicant-wlan0.conf "/var/lib/fancy-frame/wpa_supplicant.conf.bak.$(date +%s)" >/dev/null 2>&1 || true
 
 WPA_CONFIG_CONTENT="ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
 update_config=1
@@ -51,7 +51,7 @@ chmod 600 /etc/wpa_supplicant/wpa_supplicant-wlan0.conf
 printf '%s\n' "${WPA_CONFIG_CONTENT}" > /etc/wpa_supplicant/wpa_supplicant.conf
 chmod 600 /etc/wpa_supplicant/wpa_supplicant.conf
 
-/opt/photo-frame/scripts/stop_setup_mode.sh
+/opt/fancy-frame/scripts/stop_setup_mode.sh
 
 # Use the wlan0 instance explicitly so we apply the intended config file.
 systemctl disable wpa_supplicant.service >/dev/null 2>&1 || true
@@ -73,7 +73,7 @@ for i in $(seq 1 90); do
   if [[ "${CURRENT_SSID}" == "${SSID}" ]] && [[ "${WPA_STATE}" == "COMPLETED" ]]; then
     ASSOCIATED_WITH_TARGET=1
     if ip -4 addr show wlan0 | grep -q 'inet '; then
-      touch /var/lib/photo-frame/wifi-configured
+      touch /var/lib/fancy-frame/wifi-configured
       rm -f /boot/firmware/force-onboarding /boot/force-onboarding || true
       exit 0
     fi
@@ -89,7 +89,7 @@ done
 
 # If association succeeded but DHCP was delayed, treat onboarding as successful.
 if [[ "${ASSOCIATED_WITH_TARGET}" -eq 1 ]]; then
-  touch /var/lib/photo-frame/wifi-configured
+  touch /var/lib/fancy-frame/wifi-configured
   rm -f /boot/firmware/force-onboarding /boot/force-onboarding || true
   exit 0
 fi

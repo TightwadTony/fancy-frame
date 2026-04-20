@@ -1,4 +1,4 @@
-# Photo Frame — Copilot Instructions
+# Fancy Frame — Copilot Instructions
 
 ## What this project is
 
@@ -12,19 +12,19 @@ Wi-Fi setup is done via a captive-portal AP flow.
 ## Repository layout
 
 ```
-photo-frame/
+fancy-frame/
 ├── api/                        # Flask REST management API (Pi, port 8080)
 │   └── app.py
 ├── config/                     # Static config files copied to /etc on install
-│   ├── hostapd.conf            # AP SSID: PhotoFrame-Setup, pass: PhotoFrame123
-│   ├── dnsmasq-photo-frame.conf
-│   └── avahi-photo-frame.service  # mDNS advertisement: _photoframe._tcp :8080
+│   ├── hostapd.conf            # AP SSID: FancyFrame-Setup, pass: FancyFrame123
+│   ├── dnsmasq-fancy-frame.conf
+│   └── avahi-fancy-frame.service  # mDNS advertisement: _fancyframe._tcp :8080
 ├── ios/                        # Native iOS app
-│   └── PhotoFrameRemote/
+│   └── FancyFrameRemote/
 │       ├── Package.swift       # Swift Package metadata, iOS 17+
-│       ├── PhotoFrameRemote.xcodeproj/
-│       └── PhotoFrameRemote/
-│           ├── PhotoFrameRemoteApp.swift
+│       ├── FancyFrameRemote.xcodeproj/
+│       └── FancyFrameRemote/
+│           ├── FancyFrameRemoteApp.swift
 │           ├── ContentView.swift
 │           ├── DeviceDiscovery.swift   # NWBrowser mDNS discovery
 │           ├── PhotoFrameAPI.swift     # URLSession API client + models
@@ -50,11 +50,11 @@ photo-frame/
 ├── docker-compose.yml          # Launches the local test stub
 ├── Dockerfile.test-stub        # Test-stub image
 └── systemd/                    # Systemd service units
-    ├── photo-frame.service             # Slideshow (xinit, always restart)
-    ├── photo-frame-wifi-bootstrap.service
-    ├── photo-frame-setup-mode.service  # hostapd + dnsmasq (AP mode)
-    ├── photo-frame-setup-portal.service
-    └── photo-frame-api.service         # Management API (WiFi mode only)
+    ├── fancy-frame.service             # Slideshow (xinit, always restart)
+    ├── fancy-frame-wifi-bootstrap.service
+    ├── fancy-frame-setup-mode.service  # hostapd + dnsmasq (AP mode)
+    ├── fancy-frame-setup-portal.service
+    └── fancy-frame-api.service         # Management API (WiFi mode only)
 ```
 
 ---
@@ -64,14 +64,14 @@ photo-frame/
 | Path | Purpose |
 |------|---------|
 | `/srv/photos/` | Samba share — drop photos here |
-| `/srv/photos/photo-frame.conf` | Slideshow configuration (world-writable) |
-| `/var/lib/photo-frame/playable-photos/` | Numbered symlinks rebuilt on each slideshow start |
-| `/opt/photo-frame/` | Installed copy of this repo |
-| `/var/lib/photo-frame/wifi-configured` | Marker: Wi-Fi has been set up at least once |
+| `/srv/photos/fancy-frame.conf` | Slideshow configuration (world-writable) |
+| `/var/lib/fancy-frame/playable-photos/` | Numbered symlinks rebuilt on each slideshow start |
+| `/opt/fancy-frame/` | Installed copy of this repo |
+| `/var/lib/fancy-frame/wifi-configured` | Marker: Wi-Fi has been set up at least once |
 
 ---
 
-## Slideshow configuration (`/srv/photos/photo-frame.conf`)
+## Slideshow configuration (`/srv/photos/fancy-frame.conf`)
 
 ```ini
 slide_seconds      = 25          # seconds per slide including transition
@@ -91,7 +91,7 @@ it changes (systemd restarts it with new settings).
 
 - **Port**: 8080
 - **Auth**: none (local network trusted)
-- **Only active on Wi-Fi** — `Conflicts=photo-frame-setup-mode.service` in the
+- **Only active on Wi-Fi** — `Conflicts=fancy-frame-setup-mode.service` in the
   systemd unit prevents it from running during AP/onboarding mode.
 
 | Method | Path | Description |
@@ -109,14 +109,14 @@ Config keys in JSON use the same names as the `.conf` file.
 
 ---
 
-## iOS app (`ios/PhotoFrameRemote/`)
+## iOS app (`ios/FancyFrameRemote/`)
 
 - **SwiftUI, iOS 17+, zero external dependencies**
-- Open in Xcode: **File → Open → `ios/PhotoFrameRemote/`** (Swift Package)
+- Open in Xcode: **File → Open → `ios/FancyFrameRemote/`** (Swift Package)
 - Requires real device or simulator with local network permission granted
 
 ### Discovery
-`DeviceDiscovery.swift` uses `NWBrowser` to browse `_photoframe._tcp.local.`.
+`DeviceDiscovery.swift` uses `NWBrowser` to browse `_fancyframe._tcp.local.`.
 Each result becomes a `PhotoFrame` `@Observable` object with `name`, `host`,
 `port`, and `isReachable`.
 
@@ -143,7 +143,7 @@ both slideshow settings and photo management.
 
 1. **Boot** → `wifi_bootstrap.sh` waits 60 s for Wi-Fi
 2. **Connected** → slideshow starts, **management API starts**
-3. **Not connected** → AP mode (`PhotoFrame-Setup` / `PhotoFrame123`),
+3. **Not connected** → AP mode (`FancyFrame-Setup` / `FancyFrame123`),
    captive portal at `http://192.168.4.1/`, management API does **not** start
 4. User enters credentials → `connect_wifi.sh` → reboot → back to step 1
 
@@ -159,7 +159,7 @@ Run **once** on a fresh Raspberry Pi OS install:
 sudo bash scripts/install_initial_setup.sh
 ```
 
-Installs packages, copies files to `/opt/photo-frame/`, configures Samba, Avahi,
+Installs packages, copies files to `/opt/fancy-frame/`, configures Samba, Avahi,
 hostapd, dnsmasq, all systemd services, Xorg permissions, and boot flags.
 
 ---

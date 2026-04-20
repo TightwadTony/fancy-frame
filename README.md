@@ -1,4 +1,4 @@
-# Photo Frame
+# Fancy Frame
 
 A self-contained digital photo frame system for Raspberry Pi Zero with a full-screen slideshow, automatic Wi-Fi onboarding, a local REST management API, and a native iPhone remote app.
 
@@ -29,7 +29,7 @@ A self-contained digital photo frame system for Raspberry Pi Zero with a full-sc
 Use **Raspberry Pi Imager** with these advanced settings:
 
 - **OS**: Raspberry Pi OS Lite (Bookworm recommended)
-- **Hostname**: photo-frame (or your preferred name)
+- **Hostname**: fancy-frame (or your preferred name)
 - **Enable SSH**: ✓
 - **Set locale/timezone**: Choose your region
 - **Configure Wi-Fi**: Optional; if skipped, onboarding mode will activate
@@ -40,22 +40,22 @@ Use **Raspberry Pi Imager** with these advanced settings:
 Go to the [Releases page](../../releases/latest) to find the current version tag (e.g. `v1.2.0`), then download and extract directly on the Pi:
 
 ```bash
-ssh photo@photo-frame
+ssh photo@fancy-frame
 
 # Replace v1.2.0 with the actual version tag shown on the Releases page
 VERSION=v1.2.0
-curl -L "https://github.com/TightwadTony/photo-frame/releases/download/${VERSION}/photo-frame-${VERSION}.tar.gz" \
+curl -L "https://github.com/TightwadTony/fancy-frame/releases/download/${VERSION}/fancy-frame-${VERSION}.tar.gz" \
   | tar xz
-cd "photo-frame-${VERSION}"
+cd "fancy-frame-${VERSION}"
 ```
 
 Or use the GitHub CLI to download the latest release automatically:
 
 ```bash
-ssh photo@photo-frame
-gh release download --repo TightwadTony/photo-frame --pattern 'photo-frame-*.tar.gz'
-tar xzf photo-frame-*.tar.gz
-cd photo-frame-*/
+ssh photo@fancy-frame
+gh release download --repo TightwadTony/fancy-frame --pattern 'fancy-frame-*.tar.gz'
+tar xzf fancy-frame-*.tar.gz
+cd fancy-frame-*/
 ```
 
 ### 3. Run installer
@@ -90,8 +90,8 @@ After reboot:
 
 ### Success: Wi-Fi connected
 
-- **Windows**: `\\photo-frame\photos`
-- **macOS/Linux**: `smb://photo-frame/photos`
+- **Windows**: `\\fancy-frame\photos`
+- **macOS/Linux**: `smb://fancy-frame/photos`
 - **Username**: (your Pi username, e.g., `photo` or `pi`)
 - **Password**: (the SMB password you set)
 
@@ -99,7 +99,7 @@ After reboot:
 
 If the device enters setup mode (onboarding AP):
 
-1. Find the AP with SSID `PhotoFrame-Setup` (default password: `PhotoFrame123`)
+1. Find the AP with SSID `FancyFrame-Setup` (default password: `FancyFrame123`)
 2. Open browser to `http://192.168.4.1/`
 3. Select your home Wi-Fi network and password
 4. AP disconnects while credentials are applied
@@ -107,7 +107,7 @@ If the device enters setup mode (onboarding AP):
 
 ## Remote management
 
-When the frame is connected to Wi-Fi, it also exposes a local management API on port 8080 and advertises itself via `_photoframe._tcp.local.` for iPhone discovery.
+When the frame is connected to Wi-Fi, it also exposes a local management API on port 8080 and advertises itself via `_fancyframe._tcp.local.` for iPhone discovery.
 
 | Method | Path | Purpose |
 |--------|------|---------|
@@ -119,16 +119,14 @@ When the frame is connected to Wi-Fi, it also exposes a local management API on 
 | GET / DELETE | `/api/photos/<filename>` | Thumbnail/full image fetch and deletion |
 | POST | `/api/restart` | Reboot the frame |
 
-Open the iPhone app from `ios/PhotoFrameRemote/` in Xcode to manage settings and photos on the local network.
+Use the companion Fancy Frame iPhone app repo to manage settings and photos on the local network.
 
 ## Directory Structure
 
 ```
-photo-frame/
+fancy-frame/
 ├── api/
 │   └── app.py                        # Flask management API (port 8080)
-├── ios/
-│   └── PhotoFrameRemote/             # Native iOS 17+ remote app
 ├── scripts/
 │   ├── install_initial_setup.sh      # Main installer (run once as root)
 │   ├── wifi_bootstrap.sh             # Decides normal vs setup mode
@@ -144,15 +142,15 @@ photo-frame/
 │       ├── index.html                # Wi-Fi/SSID selection page
 │       └── result.html               # Success/failure feedback
 ├── systemd/
-│   ├── photo-frame.service           # Main slideshow service
-│   ├── photo-frame-wifi-bootstrap.service  # Bootstrap decision logic
-│   ├── photo-frame-setup-mode.service      # AP/DHCP service
-│   ├── photo-frame-setup-portal.service    # Web portal service
-│   └── photo-frame-api.service            # Management API service
+│   ├── fancy-frame.service           # Main slideshow service
+│   ├── fancy-frame-wifi-bootstrap.service  # Bootstrap decision logic
+│   ├── fancy-frame-setup-mode.service      # AP/DHCP service
+│   ├── fancy-frame-setup-portal.service    # Web portal service
+│   └── fancy-frame-api.service            # Management API service
 ├── config/
 │   ├── hostapd.conf                  # Access point config
-│   ├── dnsmasq-photo-frame.conf      # DHCP/DNS for AP mode
-│   └── avahi-photo-frame.service     # mDNS advertisement for the API
+│   ├── dnsmasq-fancy-frame.conf      # DHCP/DNS for AP mode
+│   └── avahi-fancy-frame.service     # mDNS advertisement for the API
 ├── docker-compose.yml                # Test-stub launch config
 ├── Dockerfile.test-stub              # Test-stub container image
 ├── requirements-test-stub.txt        # Test-stub Python dependency list
@@ -168,7 +166,7 @@ Connect to the photo share and drag files in or out:
 
 ```bash
 # Example: macOS
-open smb://photo-frame/photos
+open smb://fancy-frame/photos
 ```
 
 Supported formats: JPEG, PNG, GIF, BMP, WebP, TIFF.
@@ -177,13 +175,13 @@ Slideshow behaviour:
 - Randomised order, reshuffled when the list is exhausted
 - Scans all files directly under `/srv/photos` (symlinks resolved by the installer)
 - New photos are picked up by periodic rescan (default 300 seconds)
-- Settings (slide duration, transitions, Ken Burns zoom range, etc.) are read from `/srv/photos/photo-frame.conf`, which is accessible via the same Samba share — edit it from any device on the network and changes take effect within 5 minutes
-- Set `frame_name` in `/srv/photos/photo-frame.conf` to control the name shown in the iPhone app device list/detail views
+- Settings (slide duration, transitions, Ken Burns zoom range, etc.) are read from `/srv/photos/fancy-frame.conf`, which is accessible via the same Samba share — edit it from any device on the network and changes take effect within 5 minutes
+- Set `frame_name` in `/srv/photos/fancy-frame.conf` to control the name shown in the iPhone app device list/detail views
 
 ### Force onboarding mode (manual reconfiguration)
 
 ```bash
-ssh photo@photo-frame
+ssh photo@fancy-frame
 # On Bookworm, boot partition is at /boot/firmware/
 sudo touch /boot/firmware/force-onboarding
 sudo reboot
@@ -194,9 +192,9 @@ At next boot, setup mode activates and you can enter new Wi-Fi credentials.
 ### Check service status
 
 ```bash
-ssh photo@photo-frame
-systemctl status photo-frame
-journalctl -u photo-frame -f
+ssh photo@fancy-frame
+systemctl status fancy-frame
+journalctl -u fancy-frame -f
 ```
 
 ### SSH shortcuts while in setup mode
@@ -216,9 +214,9 @@ ssh photo@192.168.4.1
 ## Customization
 
 - **Change AP SSID/password**: Edit `/etc/hostapd/hostapd.conf`
-- **Adjust slideshow delay**: Set `PHOTO_FRAME_SLIDE_SECONDS` (default 25)
-- **Adjust refresh interval for newly added photos**: Set `PHOTO_FRAME_REFRESH_SECONDS` (default 300)
-- **Set frame display name at install time**: Set `PHOTO_FRAME_NAME` before running installer (or enter it when prompted)
+- **Adjust slideshow delay**: Set `FANCY_FRAME_SLIDE_SECONDS` (default 25)
+- **Adjust refresh interval for newly added photos**: Set `FANCY_FRAME_REFRESH_SECONDS` (default 300)
+- **Set frame display name at install time**: Set `FANCY_FRAME_NAME` before running installer (or enter it when prompted)
 - **Change share path**: Update `/srv/photos` references in `scripts/install_initial_setup.sh` (Samba section), then reinstall or reapply the Samba config block
 - **Add multiple Wi-Fi networks**: Manually edit `/etc/wpa_supplicant/wpa_supplicant.conf` with multiple network blocks
 
@@ -227,8 +225,8 @@ ssh photo@192.168.4.1
 ### Slideshow never starts
 
 ```bash
-journalctl -u photo-frame -n 50
-journalctl -u photo-frame-wifi-bootstrap -n 50
+journalctl -u fancy-frame -n 50
+journalctl -u fancy-frame-wifi-bootstrap -n 50
 ```
 
 Common causes:
@@ -238,9 +236,9 @@ Common causes:
 
 ### Can't connect to SMB share
 
-- Verify device is on network: `ping photo-frame.local`
+- Verify device is on network: `ping fancy-frame.local`
 - Verify SMB password was set: `sudo smbpasswd -l` (check your username in output)
-- Check share exists: `smbclient -L photo-frame -U photo` (replace `photo` with your username)
+- Check share exists: `smbclient -L fancy-frame -U photo` (replace `photo` with your username)
 
 ### Stuck in setup mode after valid entry
 
@@ -287,14 +285,14 @@ systemctl status hostapd
 systemctl status dnsmasq
 ```
 
-## Testing: Photo Frame Test Stub
+## Testing: Fancy Frame Test Stub
 
 For testing the iOS app with multiple simulated frames on your local network, use the **test stub**.
 
 ### Quick Start
 
 ```bash
-cd /path/to/photo-frame
+cd /path/to/fancy-frame
 
 # Start 3 test frames (default)
 docker compose up test-frames
@@ -308,7 +306,7 @@ docker compose down
 
 ### Usage
 
-The test stub advertises fake Photo Frame devices on `_photoframe._tcp.local.` (mDNS/Bonjour) so your iOS app can discover them.
+The test stub advertises fake Fancy Frame devices on `_fancyframe._tcp.local.` (mDNS/Bonjour) so your iOS app can discover them.
 
 **Requirements:**
 - Docker and Docker Compose installed
@@ -336,7 +334,7 @@ docker compose down
 ```
 
 **Each test frame:**
-- Advertises via mDNS with name `Photo Frame (Test Frame N)`
+- Advertises via mDNS with name `Fancy Frame (Test Frame N)`
 - Runs a mock HTTP API on localhost port `9000 + N`
 - Mirrors the current iOS-facing endpoints: `/api/info`, `/api/config`, `/api/photos`, `/api/photos/list`, `/api/photos/<filename>`, and `/api/restart`
 - Supports config updates, in-memory uploads, deletions, and placeholder thumbnail/image responses for gallery testing
@@ -372,12 +370,8 @@ deactivate
 # Python sources
 python3 -m compileall api portal scripts
 
-# iOS app (simulator build)
-xcodebuild -project ios/PhotoFrameRemote/PhotoFrameRemote.xcodeproj \
-  -scheme FancyFrame-std \
-  -sdk iphonesimulator \
-  -destination 'generic/platform=iOS Simulator' \
-  CODE_SIGNING_ALLOWED=NO build
+# iPhone app
+# Build the standalone Fancy Frame iPhone app from its companion repo.
 
 # Docker test stub (requires Docker Desktop or another running daemon)
 docker compose build test-frames

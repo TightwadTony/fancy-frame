@@ -1,0 +1,10 @@
+[Unit]
+Description=Fancy Frame Wi-Fi Bootstrap
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/fancy-frame/scripts/wifi_bootstrap.sh
+
+[Install]
+WantedBy=multi-user.target

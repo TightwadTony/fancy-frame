@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Photo Frame Test Stub
+Fancy Frame Test Stub
 
-Advertises multiple fake Photo Frames on the local network via mDNS and serves
+Advertises multiple fake Fancy Frames on the local network via mDNS and serves
 mock API responses for testing the iOS app with various frame counts.
 
 Usage:
@@ -11,7 +11,7 @@ Usage:
     python3 test_stub.py --frames 1         # Single frame
     python3 test_stub.py --help             # Show options
 
-Each frame advertises on the _photoframe._tcp service and runs a simple HTTP API
+Each frame advertises on the _fancyframe._tcp service and runs a simple HTTP API
 that responds to the iOS app's requests.
 
 Press Ctrl+C to stop.
@@ -46,7 +46,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(name)s] %(levelname)s: %(message)s"
 )
-logger = logging.getLogger("photo-frame-test")
+logger = logging.getLogger("fancy-frame-test")
 
 VALID_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tif", ".tiff"}
 SAMPLE_IMAGE_BYTES = (
@@ -56,8 +56,8 @@ SAMPLE_IMAGE_BYTES = (
 )
 
 
-class MockPhotoFrame:
-    """Simulated photo frame with mutable config."""
+class MockFancyFrame:
+    """Simulated Fancy Frame with mutable config."""
 
     def __init__(self, frame_id: int, hostname: str, ip_address: str, port: int):
         self.frame_id = frame_id
@@ -159,10 +159,10 @@ class MockPhotoFrame:
 
 
 class MockAPIHandler(BaseHTTPRequestHandler):
-    """HTTP request handler for mock Photo Frame API."""
+    """HTTP request handler for the mock Fancy Frame API."""
 
     # Class attribute to map endpoint to frame instance
-    frames: dict[int, MockPhotoFrame] = {}
+    frames: dict[int, MockFancyFrame] = {}
     frame_for_port: dict[int, int] = {}  # port -> frame_id
 
     def log_message(self, format_str: str, *args: Any) -> None:
@@ -322,7 +322,7 @@ def detect_advertised_ip() -> str:
 
 def run_test_frames(num_frames: int, bind_host: str) -> None:
     """
-    Advertise num_frames Photo Frames via mDNS and run HTTP servers for each.
+    Advertise num_frames Fancy Frames via mDNS and run HTTP servers for each.
     """
     logger.info(f"Starting test stub with {num_frames} frame(s)...")
 
@@ -345,7 +345,7 @@ def run_test_frames(num_frames: int, bind_host: str) -> None:
             hostname = f"test-frame-{i}.local"
 
             # Create mock frame
-            frame = MockPhotoFrame(frame_id, hostname, advertised_ip, port)
+            frame = MockFancyFrame(frame_id, hostname, advertised_ip, port)
             frames[frame_id] = frame
 
             logger.info(f"Frame {frame_id}: '{frame.config['frame_name']}' on port {port}")
@@ -367,8 +367,8 @@ def run_test_frames(num_frames: int, bind_host: str) -> None:
             threads.append(t)
 
             # Advertise via mDNS
-            service_name = f"Photo Frame ({frame.config['frame_name']})"
-            service_type = "_photoframe._tcp.local."
+            service_name = f"Fancy Frame ({frame.config['frame_name']})"
+            service_type = "_fancyframe._tcp.local."
 
             service_info = ServiceInfo(
                 service_type,
@@ -406,7 +406,7 @@ def main() -> None:
     default_bind = os.getenv("TEST_STUB_BIND_HOST", "0.0.0.0")
 
     parser = argparse.ArgumentParser(
-        description="Photo Frame Test Stub - simulate multiple frames on local network",
+        description="Fancy Frame Test Stub - simulate multiple frames on local network",
         epilog="Example: python3 test_stub.py --frames 3",
     )
     parser.add_argument(

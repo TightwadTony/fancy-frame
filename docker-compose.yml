@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.test-stub
-    container_name: photo-frame-test-stub
+    container_name: fancy-frame-test-stub
     command: ["--frames", "${TEST_STUB_FRAMES:-3}", "--bind-host", "0.0.0.0"]
     ports:
       - "9000-9099:9000-9099"

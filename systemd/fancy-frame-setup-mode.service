@@ -1,0 +1,13 @@
+[Unit]
+Description=Fancy Frame Setup AP Mode
+After=network-pre.target
+Before=network.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/opt/fancy-frame/scripts/start_setup_mode.sh
+ExecStop=/opt/fancy-frame/scripts/stop_setup_mode.sh
+
+[Install]
+WantedBy=multi-user.target

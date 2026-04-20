@@ -8,11 +8,12 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-INSTALL_ROOT="/opt/photo-frame"
+INSTALL_ROOT="/opt/fancy-frame"
+LEGACY_INSTALL_ROOT="/opt/photo-frame"
 
 detect_target_user() {
-  if [[ -n "${PHOTO_FRAME_USER:-}" ]] && id -u "${PHOTO_FRAME_USER}" >/dev/null 2>&1; then
-    printf '%s' "${PHOTO_FRAME_USER}"
+  if [[ -n "${FANCY_FRAME_USER:-}" ]] && id -u "${FANCY_FRAME_USER}" >/dev/null 2>&1; then
+    printf '%s' "${FANCY_FRAME_USER}"
     return 0
   fi
 
@@ -36,9 +37,9 @@ detect_target_user() {
 
 TARGET_USER="$(detect_target_user)"
 if [[ -z "${TARGET_USER}" ]] || ! id -u "${TARGET_USER}" >/dev/null 2>&1; then
-  echo "Could not determine a non-root user to own photo-frame files."
+  echo "Could not determine a non-root user to own fancy-frame files."
   echo "Set one explicitly, for example:"
-  echo "  sudo PHOTO_FRAME_USER=photo bash scripts/install_initial_setup.sh"
+  echo "  sudo FANCY_FRAME_USER=photo bash scripts/install_initial_setup.sh"
   exit 1
 fi
 
@@ -86,7 +87,7 @@ choose_smb_mode() {
 SMB_MODE="$(choose_smb_mode)"
 
 choose_frame_name() {
-  local selected="${PHOTO_FRAME_NAME:-}"
+  local selected="${FANCY_FRAME_NAME:-}"
 
   if [[ -n "${selected}" ]]; then
     printf '%s' "${selected}"
@@ -161,9 +162,9 @@ FRAME_NAME="$(normalize_frame_name "$(choose_frame_name)")"
 
 # Ask whether to run a full system upgrade before installing packages.
 RUN_UPGRADE="no"
-if [[ -n "${PHOTO_FRAME_UPGRADE:-}" ]]; then
-  case "${PHOTO_FRAME_UPGRADE,,}" in
-    yes|1|true) RUN_UPGRADE="yes" ;;
+if [[ -n "${FANCY_FRAME_UPGRADE:-}" ]]; then
+  case "${FANCY_FRAME_UPGRADE}" in
+    [Yy][Ee][Ss]|1|[Tt][Rr][Uu][Ee]) RUN_UPGRADE="yes" ;;
   esac
 elif [[ -t 0 ]]; then
   echo
@@ -303,14 +304,14 @@ configure_display_console() {
 }
 
 configure_samba_tuning() {
-  if grep -q "BEGIN PHOTO-FRAME SMB TUNING" /etc/samba/smb.conf; then
+  if grep -Eq "BEGIN (FANCY|PHOTO)-FRAME SMB TUNING" /etc/samba/smb.conf; then
     awk '
-      /# BEGIN PHOTO-FRAME SMB TUNING/ {skip=1; next}
-      /# END PHOTO-FRAME SMB TUNING/ {skip=0; next}
+      /# BEGIN (FANCY|PHOTO)-FRAME SMB TUNING/ {skip=1; next}
+      /# END (FANCY|PHOTO)-FRAME SMB TUNING/ {skip=0; next}
       !skip {print}
-    ' /etc/samba/smb.conf > /tmp/smb.conf.photo-frame.tmp
-    cp /tmp/smb.conf.photo-frame.tmp /etc/samba/smb.conf
-    rm -f /tmp/smb.conf.photo-frame.tmp
+    ' /etc/samba/smb.conf > /tmp/smb.conf.fancy-frame.tmp
+    cp /tmp/smb.conf.fancy-frame.tmp /etc/samba/smb.conf
+    rm -f /tmp/smb.conf.fancy-frame.tmp
   fi
 
   if grep -qi '^\s*\[global\]\s*$' /etc/samba/smb.conf; then
@@ -319,36 +320,36 @@ configure_samba_tuning() {
       {
         print
         if (!inserted && $0 ~ /^[[:space:]]*\[global\][[:space:]]*$/) {
-          print "   # BEGIN PHOTO-FRAME SMB TUNING"
+          print "   # BEGIN FANCY-FRAME SMB TUNING"
           print "   server min protocol = SMB2"
           print "   load printers = no"
           print "   printing = bsd"
           print "   printcap name = /dev/null"
           print "   disable spoolss = yes"
           print "   deadtime = 15"
-          print "   # END PHOTO-FRAME SMB TUNING"
+          print "   # END FANCY-FRAME SMB TUNING"
           inserted=1
         }
       }
-    ' /etc/samba/smb.conf > /tmp/smb.conf.photo-frame.tmp
-    cp /tmp/smb.conf.photo-frame.tmp /etc/samba/smb.conf
-    rm -f /tmp/smb.conf.photo-frame.tmp
+    ' /etc/samba/smb.conf > /tmp/smb.conf.fancy-frame.tmp
+    cp /tmp/smb.conf.fancy-frame.tmp /etc/samba/smb.conf
+    rm -f /tmp/smb.conf.fancy-frame.tmp
   else
-    cat > /tmp/smb.conf.photo-frame.tmp <<EOF
+    cat > /tmp/smb.conf.fancy-frame.tmp <<EOF
 [global]
-   # BEGIN PHOTO-FRAME SMB TUNING
+   # BEGIN FANCY-FRAME SMB TUNING
    server min protocol = SMB2
    load printers = no
    printing = bsd
    printcap name = /dev/null
    disable spoolss = yes
    deadtime = 15
-   # END PHOTO-FRAME SMB TUNING
+   # END FANCY-FRAME SMB TUNING
 
 EOF
-    cat /etc/samba/smb.conf >> /tmp/smb.conf.photo-frame.tmp
-    cp /tmp/smb.conf.photo-frame.tmp /etc/samba/smb.conf
-    rm -f /tmp/smb.conf.photo-frame.tmp
+    cat /etc/samba/smb.conf >> /tmp/smb.conf.fancy-frame.tmp
+    cp /tmp/smb.conf.fancy-frame.tmp /etc/samba/smb.conf
+    rm -f /tmp/smb.conf.fancy-frame.tmp
   fi
 }
 
@@ -376,10 +377,17 @@ apt install -y \
 echo "Preparing directories..."
 mkdir -p /srv/photos
 chown -R "${TARGET_USER}:${TARGET_USER}" /srv/photos
-mkdir -p /var/lib/photo-frame
-chown -R "${TARGET_USER}:${TARGET_USER}" /var/lib/photo-frame
+mkdir -p /var/lib/fancy-frame
+if [[ -d /var/lib/photo-frame ]] && [[ ! -L /var/lib/photo-frame ]]; then
+  cp -a /var/lib/photo-frame/. /var/lib/fancy-frame/ >/dev/null 2>&1 || true
+fi
+chown -R "${TARGET_USER}:${TARGET_USER}" /var/lib/fancy-frame
 
-upsert_conf_key /srv/photos/photo-frame.conf frame_name "${FRAME_NAME}"
+if [[ -f /srv/photos/photo-frame.conf ]] && [[ ! -e /srv/photos/fancy-frame.conf ]]; then
+  mv /srv/photos/photo-frame.conf /srv/photos/fancy-frame.conf
+fi
+upsert_conf_key /srv/photos/fancy-frame.conf frame_name "${FRAME_NAME}"
+ln -sfn /srv/photos/fancy-frame.conf /srv/photos/photo-frame.conf
 
 mkdir -p "${INSTALL_ROOT}"
 cp -a "${PROJECT_ROOT}/scripts" "${INSTALL_ROOT}/"
@@ -389,6 +397,12 @@ cp -a "${PROJECT_ROOT}/config" "${INSTALL_ROOT}/"
 cp -a "${PROJECT_ROOT}/systemd" "${INSTALL_ROOT}/"
 chmod +x "${INSTALL_ROOT}"/scripts/*.sh
 
+if [[ -d "${LEGACY_INSTALL_ROOT}" ]] && [[ ! -L "${LEGACY_INSTALL_ROOT}" ]]; then
+  rm -rf "${LEGACY_INSTALL_ROOT}"
+fi
+ln -sfn "${INSTALL_ROOT}" "${LEGACY_INSTALL_ROOT}"
+ln -sfn /var/lib/fancy-frame /var/lib/photo-frame
+
 
 echo "Installing hostapd and dnsmasq configs..."
 install -m 0644 "${INSTALL_ROOT}/config/hostapd.conf" /etc/hostapd/hostapd.conf
@@ -397,7 +411,8 @@ if grep -q '^#\?DAEMON_CONF=' /etc/default/hostapd; then
 else
   echo 'DAEMON_CONF="/etc/hostapd/hostapd.conf"' >> /etc/default/hostapd
 fi
-install -m 0644 "${INSTALL_ROOT}/config/dnsmasq-photo-frame.conf" /etc/dnsmasq.d/photo-frame.conf
+rm -f /etc/dnsmasq.d/photo-frame.conf
+install -m 0644 "${INSTALL_ROOT}/config/dnsmasq-fancy-frame.conf" /etc/dnsmasq.d/fancy-frame.conf
 
 # Ensure setup-mode scripts can start these services on demand.
 systemctl unmask hostapd >/dev/null 2>&1 || true
@@ -414,33 +429,44 @@ systemctl enable wpa_supplicant@wlan0.service >/dev/null 2>&1 || true
 
 
 echo "Installing systemd services..."
-install -m 0644 "${INSTALL_ROOT}/systemd/photo-frame.service" /etc/systemd/system/photo-frame.service
-install -m 0644 "${INSTALL_ROOT}/systemd/photo-frame-wifi-bootstrap.service" /etc/systemd/system/photo-frame-wifi-bootstrap.service
-install -m 0644 "${INSTALL_ROOT}/systemd/photo-frame-setup-mode.service" /etc/systemd/system/photo-frame-setup-mode.service
-install -m 0644 "${INSTALL_ROOT}/systemd/photo-frame-setup-portal.service" /etc/systemd/system/photo-frame-setup-portal.service
-install -m 0644 "${INSTALL_ROOT}/systemd/photo-frame-api.service" /etc/systemd/system/photo-frame-api.service
+for legacy_unit in \
+  photo-frame.service \
+  photo-frame-wifi-bootstrap.service \
+  photo-frame-setup-mode.service \
+  photo-frame-setup-portal.service \
+  photo-frame-api.service; do
+  systemctl disable "${legacy_unit}" >/dev/null 2>&1 || true
+  rm -f "/etc/systemd/system/${legacy_unit}"
+done
+
+install -m 0644 "${INSTALL_ROOT}/systemd/fancy-frame.service" /etc/systemd/system/fancy-frame.service
+install -m 0644 "${INSTALL_ROOT}/systemd/fancy-frame-wifi-bootstrap.service" /etc/systemd/system/fancy-frame-wifi-bootstrap.service
+install -m 0644 "${INSTALL_ROOT}/systemd/fancy-frame-setup-mode.service" /etc/systemd/system/fancy-frame-setup-mode.service
+install -m 0644 "${INSTALL_ROOT}/systemd/fancy-frame-setup-portal.service" /etc/systemd/system/fancy-frame-setup-portal.service
+install -m 0644 "${INSTALL_ROOT}/systemd/fancy-frame-api.service" /etc/systemd/system/fancy-frame-api.service
 
 systemctl daemon-reload
-systemctl enable photo-frame.service
-systemctl enable photo-frame-wifi-bootstrap.service
-systemctl enable photo-frame-api.service
+systemctl enable fancy-frame.service
+systemctl enable fancy-frame-wifi-bootstrap.service
+systemctl enable fancy-frame-api.service
 
 
 echo "Installing Avahi mDNS advertisement..."
-install -m 0644 "${INSTALL_ROOT}/config/avahi-photo-frame.service" /etc/avahi/services/photo-frame.service
+rm -f /etc/avahi/services/photo-frame.service
+install -m 0644 "${INSTALL_ROOT}/config/avahi-fancy-frame.service" /etc/avahi/services/fancy-frame.service
 
 
 echo "Configuring Samba share..."
 configure_samba_tuning
 
-if grep -q "BEGIN PHOTO-FRAME SHARE" /etc/samba/smb.conf; then
+if grep -Eq "BEGIN (FANCY|PHOTO)-FRAME SHARE" /etc/samba/smb.conf; then
   awk '
-    /# BEGIN PHOTO-FRAME SHARE/ {skip=1; next}
-    /# END PHOTO-FRAME SHARE/ {skip=0; next}
+    /# BEGIN (FANCY|PHOTO)-FRAME SHARE/ {skip=1; next}
+    /# END (FANCY|PHOTO)-FRAME SHARE/ {skip=0; next}
     !skip {print}
-  ' /etc/samba/smb.conf > /tmp/smb.conf.photo-frame.tmp
-  cp /tmp/smb.conf.photo-frame.tmp /etc/samba/smb.conf
-  rm -f /tmp/smb.conf.photo-frame.tmp
+  ' /etc/samba/smb.conf > /tmp/smb.conf.fancy-frame.tmp
+  cp /tmp/smb.conf.fancy-frame.tmp /etc/samba/smb.conf
+  rm -f /tmp/smb.conf.fancy-frame.tmp
 fi
 
 if [[ "${SMB_MODE}" == "anonymous" ]]; then
@@ -456,9 +482,9 @@ if [[ "${SMB_MODE}" == "anonymous" ]]; then
           inserted=1
         }
       }
-    ' /etc/samba/smb.conf > /tmp/smb.conf.photo-frame.tmp
-    cp /tmp/smb.conf.photo-frame.tmp /etc/samba/smb.conf
-    rm -f /tmp/smb.conf.photo-frame.tmp
+    ' /etc/samba/smb.conf > /tmp/smb.conf.fancy-frame.tmp
+    cp /tmp/smb.conf.fancy-frame.tmp /etc/samba/smb.conf
+    rm -f /tmp/smb.conf.fancy-frame.tmp
   else
     cat >> /etc/samba/smb.conf <<EOF
 
@@ -469,7 +495,7 @@ EOF
 
   cat >> /etc/samba/smb.conf <<EOF
 
-# BEGIN PHOTO-FRAME SHARE
+# BEGIN FANCY-FRAME SHARE
 [photos]
    path = /srv/photos
    browseable = yes
@@ -479,12 +505,12 @@ EOF
    force user = ${TARGET_USER}
    create mask = 0644
    directory mask = 0755
-# END PHOTO-FRAME SHARE
+# END FANCY-FRAME SHARE
 EOF
 else
   cat >> /etc/samba/smb.conf <<EOF
 
-# BEGIN PHOTO-FRAME SHARE
+# BEGIN FANCY-FRAME SHARE
 [photos]
    path = /srv/photos
    browseable = yes
@@ -492,27 +518,27 @@ else
    create mask = 0644
    directory mask = 0755
    valid users = ${TARGET_USER}
-# END PHOTO-FRAME SHARE
+# END FANCY-FRAME SHARE
 EOF
 fi
 
-if grep -q "BEGIN PHOTO-FRAME HOMES" /etc/samba/smb.conf; then
+if grep -Eq "BEGIN (FANCY|PHOTO)-FRAME HOMES" /etc/samba/smb.conf; then
   awk '
-    /# BEGIN PHOTO-FRAME HOMES/ {skip=1; next}
-    /# END PHOTO-FRAME HOMES/ {skip=0; next}
+    /# BEGIN (FANCY|PHOTO)-FRAME HOMES/ {skip=1; next}
+    /# END (FANCY|PHOTO)-FRAME HOMES/ {skip=0; next}
     !skip {print}
-  ' /etc/samba/smb.conf > /tmp/smb.conf.photo-frame.tmp
-  cp /tmp/smb.conf.photo-frame.tmp /etc/samba/smb.conf
-  rm -f /tmp/smb.conf.photo-frame.tmp
+  ' /etc/samba/smb.conf > /tmp/smb.conf.fancy-frame.tmp
+  cp /tmp/smb.conf.fancy-frame.tmp /etc/samba/smb.conf
+  rm -f /tmp/smb.conf.fancy-frame.tmp
 fi
 
 cat >> /etc/samba/smb.conf <<EOF
 
-# BEGIN PHOTO-FRAME HOMES
+# BEGIN FANCY-FRAME HOMES
 [homes]
    browseable = no
    available = no
-# END PHOTO-FRAME HOMES
+# END FANCY-FRAME HOMES
 EOF
 
 systemctl enable smbd
