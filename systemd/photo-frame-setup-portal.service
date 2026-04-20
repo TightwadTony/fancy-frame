@@ -5,6 +5,7 @@ Requires=photo-frame-setup-mode.service
 
 [Service]
 Type=simple
+Environment=PYTHONUNBUFFERED=1
 ExecStart=/usr/bin/python3 /opt/photo-frame/portal/app.py
 Restart=always
 RestartSec=2

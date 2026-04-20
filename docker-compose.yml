@@ -1,0 +1,13 @@
+services:
+  test-frames:
+    build:
+      context: .
+      dockerfile: Dockerfile.test-stub
+    container_name: photo-frame-test-stub
+    command: ["--frames", "${TEST_STUB_FRAMES:-3}", "--bind-host", "0.0.0.0"]
+    ports:
+      - "9000-9099:9000-9099"
+    environment:
+      # Optional: force the advertised IP used in mDNS + /api/info (recommended on macOS Docker Desktop)
+      - TEST_STUB_ADVERTISED_IP=${TEST_STUB_ADVERTISED_IP:-}
+    restart: unless-stopped

@@ -1,14 +1,24 @@
 [Unit]
 Description=Photo Frame Slideshow
-After=network-online.target
+After=network-online.target systemd-user-sessions.service
 Wants=network-online.target
+Conflicts=getty@tty1.service getty@tty2.service
 
 [Service]
 User=root
 Group=root
 Environment=HOME=/root
+Environment=PYTHONUNBUFFERED=1
 WorkingDirectory=/root
-ExecStart=/usr/bin/xinit /opt/photo-frame/scripts/start-slideshow.sh -- :0 -nolisten tcp
+StandardInput=tty
+StandardOutput=journal
+StandardError=journal
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+ExecStartPre=-/usr/bin/chvt 1
+ExecStart=/usr/bin/xinit /opt/photo-frame/scripts/start-slideshow.sh -- :0 vt1 -nolisten tcp
 Restart=always
 RestartSec=3
 

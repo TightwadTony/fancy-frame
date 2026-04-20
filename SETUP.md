@@ -4,6 +4,7 @@ This document installs a slideshow photo frame with:
 
 - Full-screen slideshow on the attached LCD panel
 - SMB file share on the local network for photo uploads/removals
+- A Wi-Fi-only REST management API for settings, photos, and restart
 - Automatic Wi-Fi onboarding portal when client Wi-Fi is not connected
 
 ## 1. Hardware and OS assumptions
@@ -83,6 +84,8 @@ After boot, one of two states will occur:
 
 - Slideshow starts automatically
 - Photos are read from /srv/photos
+- Management API starts on port 8080 and is advertised via `_photoframe._tcp.local.`
+- The iPhone app in `ios/PhotoFrameRemote/` can discover and manage the frame on the local network
 - SMB share is available at:
   - Windows: \\photo-frame\photos
   - macOS/Linux: smb://photo-frame/photos
@@ -100,9 +103,10 @@ If Wi-Fi is not connected:
 
 To force onboarding on next boot:
 
-sudo touch /boot/force-onboarding
+sudo touch /boot/firmware/force-onboarding
 sudo reboot
 
+On older Raspberry Pi OS images, `/boot/force-onboarding` is also accepted for compatibility.
 At next boot the file is consumed and deleted automatically.
 
 ## 11. Useful status checks
