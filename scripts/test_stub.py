@@ -167,6 +167,14 @@ class MockFancyFrame:
             "published_at": "2026-04-20T00:00:00Z",
             "prerelease": False,
             "draft": False,
+            "assets": [
+                {
+                    "name": "fancy-frame-v9.9.9.tar.gz",
+                    "api_url": "https://api.github.com/repos/TightwadTony/fancy-frame/releases/assets/1",
+                    "browser_download_url": "https://github.com/TightwadTony/fancy-frame/releases/download/v9.9.9/fancy-frame-v9.9.9.tar.gz",
+                    "size": 1234,
+                }
+            ],
         }
         return {
             "repository": "TightwadTony/fancy-frame",
@@ -176,6 +184,38 @@ class MockFancyFrame:
             "comparison": "update_available",
             "update_available": True,
             "checked_at": int(time.time()),
+        }
+
+    def install_update(self) -> dict[str, Any]:
+        """Return /api/update response."""
+        return {
+            "status": "installing",
+            "repository": "TightwadTony/fancy-frame",
+            "current_version": self.current_version,
+            "current_version_source": "version_file",
+            "target_version": "v9.9.9",
+            "unit_name": f"fancy-frame-self-update-{int(time.time())}",
+            "log_path": "/var/log/fancy-frame-update.log",
+        }
+
+    def get_update_status(self) -> dict[str, Any]:
+        """Return /api/update/status response."""
+        return {
+            "status": "installing",
+            "in_progress": True,
+            "active_update": {
+                "unit_name": f"fancy-frame-self-update-{int(time.time())}",
+                "target_version": "v9.9.9",
+                "created_at": int(time.time()),
+            },
+            "unit_name": f"fancy-frame-self-update-{int(time.time())}",
+            "log_path": "/var/log/fancy-frame-update.log",
+            "log_exists": True,
+            "log_tail": ["=== 2026-04-20T12:00:00 starting Fancy Frame self-update to v9.9.9 ==="],
+            "checked_at": int(time.time()),
+            "repository": "TightwadTony/fancy-frame",
+            "current_version": self.current_version,
+            "current_version_source": "version_file",
         }
 
 
@@ -207,6 +247,8 @@ class MockAPIHandler(BaseHTTPRequestHandler):
             self.respond_json(frame.get_config())
         elif path == "/api/update-check":
             self.respond_json(frame.get_update_check())
+        elif path == "/api/update/status":
+            self.respond_json(frame.get_update_status())
         elif path == "/api/photos":
             self.respond_json(frame.get_photos())
         elif path == "/api/photos/list":
@@ -257,6 +299,8 @@ class MockAPIHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(b'{"status": "rebooting"}')
+        elif path == "/api/update":
+            self.respond_json(frame.install_update(), status=202)
         elif path == "/api/photos":
             try:
                 content_length = int(self.headers.get("Content-Length", 0))

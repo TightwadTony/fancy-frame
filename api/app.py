@@ -15,10 +15,12 @@ import json
 import logging
 import os
 import re
+import shlex
 import socket
 import subprocess
 import threading
 import time
+import textwrap
 import uuid
 from pathlib import Path
 from urllib.parse import quote
@@ -43,12 +45,15 @@ CONFIG_FILE = Path('/srv/photos/fancy-frame.conf')
 PHOTOS_DIR = Path('/srv/photos')
 THUMBNAIL_CACHE_DIR = Path('/var/lib/fancy-frame/thumb-cache')
 VERSION_FILE = APP_ROOT / 'VERSION'
+UPDATE_LOCK_FILE = Path('/var/lib/fancy-frame/update.lock')
+UPDATE_LOG_FILE = Path('/var/log/fancy-frame-update.log')
 SMB_CONF       = Path('/etc/samba/smb.conf')
 SMB_SHARE_NAME = 'photos'
 THUMBNAIL_LOCK = threading.Semaphore(1)
 
 GITHUB_REPO = 'TightwadTony/fancy-frame'
 GITHUB_LATEST_RELEASE_URL = f'https://api.github.com/repos/{GITHUB_REPO}/releases/latest'
+UPDATE_UNIT_PREFIX = 'fancy-frame-self-update'
 
 VALID_TRANSITIONS = {'crossfade', 'fade_to_black', 'wipe'}
 VALID_IMAGE_EXTS  = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tif', '.tiff'}
@@ -244,6 +249,40 @@ def _github_api_headers() -> dict[str, str]:
     return headers
 
 
+def _extract_release_info(payload: dict) -> dict:
+    tag_name = payload.get('tag_name')
+    if not isinstance(tag_name, str) or not tag_name.strip():
+        raise RuntimeError('GitHub API response did not include a valid tag_name')
+
+    assets = []
+    for asset in payload.get('assets', []):
+        if not isinstance(asset, dict):
+            continue
+        name = asset.get('name')
+        api_url = asset.get('url')
+        browser_download_url = asset.get('browser_download_url')
+        if not isinstance(name, str) or not name:
+            continue
+        if not isinstance(api_url, str) or not api_url:
+            continue
+        assets.append({
+            'name': name,
+            'api_url': api_url,
+            'browser_download_url': browser_download_url,
+            'size': asset.get('size'),
+        })
+
+    return {
+        'tag_name': tag_name.strip(),
+        'name': payload.get('name'),
+        'html_url': payload.get('html_url'),
+        'published_at': payload.get('published_at'),
+        'prerelease': bool(payload.get('prerelease', False)),
+        'draft': bool(payload.get('draft', False)),
+        'assets': assets,
+    }
+
+
 def _fetch_latest_release() -> dict:
     request = Request(
         GITHUB_LATEST_RELEASE_URL,
@@ -263,18 +302,162 @@ def _fetch_latest_release() -> dict:
     except json.JSONDecodeError as exc:
         raise RuntimeError('GitHub API returned invalid JSON') from exc
 
-    tag_name = payload.get('tag_name')
-    if not isinstance(tag_name, str) or not tag_name.strip():
-        raise RuntimeError('GitHub API response did not include a valid tag_name')
+    return _extract_release_info(payload)
+
+
+def _find_release_archive_asset(release: dict) -> dict | None:
+    tag_name = release['tag_name']
+    expected_name = f'fancy-frame-{tag_name}.tar.gz'
+    for asset in release.get('assets', []):
+        if asset.get('name') == expected_name:
+            return asset
+
+    for asset in release.get('assets', []):
+        name = asset.get('name', '')
+        if isinstance(name, str) and name.startswith('fancy-frame-') and name.endswith('.tar.gz'):
+            return asset
+
+    return None
+
+
+def _read_update_lock() -> dict | None:
+    try:
+        return json.loads(UPDATE_LOCK_FILE.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _write_update_lock(lock_data: dict) -> None:
+    with UPDATE_LOCK_FILE.open('x') as lock_file:
+        json.dump(lock_data, lock_file)
+
+
+def _update_unit_is_active(unit_name: str) -> bool:
+    if not unit_name:
+        return False
+
+    try:
+        result = subprocess.run(
+            ['systemctl', 'is-active', unit_name],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except (FileNotFoundError, subprocess.SubprocessError):
+        return False
+
+    return result.stdout.strip() in {'active', 'activating', 'reloading'}
+
+
+def _acquire_update_lock(lock_data: dict) -> tuple[bool, dict | None]:
+    try:
+        _write_update_lock(lock_data)
+        return True, lock_data
+    except FileExistsError:
+        pass
+    except OSError:
+        existing = _read_update_lock()
+        return False, existing
+
+    existing = _read_update_lock()
+    if existing and _update_unit_is_active(str(existing.get('unit_name', ''))):
+        return False, existing
+
+    try:
+        UPDATE_LOCK_FILE.unlink(missing_ok=True)
+        _write_update_lock(lock_data)
+    except OSError:
+        existing = _read_update_lock()
+        return False, existing
+
+    return True, lock_data
+
+
+def _release_update_lock() -> None:
+    try:
+        UPDATE_LOCK_FILE.unlink(missing_ok=True)
+    except OSError:
+        logger.warning('Could not remove update lock file %s', UPDATE_LOCK_FILE)
+
+
+def _read_update_log_tail(max_lines: int = 20) -> list[str]:
+    try:
+        lines = UPDATE_LOG_FILE.read_text().splitlines()
+    except OSError:
+        return []
+    return lines[-max_lines:]
+
+
+def _current_update_status() -> dict:
+    lock_data = _read_update_lock()
+    unit_name = str(lock_data.get('unit_name', '')) if lock_data else ''
+    is_running = _update_unit_is_active(unit_name)
+
+    if lock_data and not is_running:
+        _release_update_lock()
+        lock_data = None
+        unit_name = ''
 
     return {
-        'tag_name': tag_name.strip(),
-        'name': payload.get('name'),
-        'html_url': payload.get('html_url'),
-        'published_at': payload.get('published_at'),
-        'prerelease': bool(payload.get('prerelease', False)),
-        'draft': bool(payload.get('draft', False)),
+        'status': 'installing' if is_running else 'idle',
+        'in_progress': is_running,
+        'active_update': lock_data,
+        'unit_name': unit_name or None,
+        'log_path': str(UPDATE_LOG_FILE),
+        'log_exists': UPDATE_LOG_FILE.exists(),
+        'log_tail': _read_update_log_tail(),
+        'checked_at': int(time.time()),
     }
+
+
+def _build_install_latest_script(release: dict, asset: dict) -> str:
+    tag_name = release['tag_name']
+    asset_name = asset['name']
+    asset_api_url = asset['api_url']
+    extracted_dir = f'fancy-frame-{tag_name}'
+
+    return textwrap.dedent(
+        f"""\
+        set -euo pipefail
+        exec >> {shlex.quote(str(UPDATE_LOG_FILE))} 2>&1
+
+        echo "=== $(date -Is) starting Fancy Frame self-update to {tag_name} ==="
+        source /etc/fancy-frame-api.env || true
+
+        work_dir=$(mktemp -d /tmp/fancy-frame-update.XXXXXX)
+        trap 'rm -f {shlex.quote(str(UPDATE_LOCK_FILE))}; rm -rf "$work_dir"' EXIT
+
+        archive="$work_dir"/{shlex.quote(asset_name)}
+        extract_dir="$work_dir"/{shlex.quote(extracted_dir)}
+
+        python3 - {shlex.quote(asset_api_url)} "$archive" <<'PY'
+import os
+import shutil
+import sys
+from urllib.request import Request, urlopen
+
+asset_url, archive_path = sys.argv[1], sys.argv[2]
+headers = {{
+    'Accept': 'application/octet-stream',
+    'User-Agent': 'fancy-frame-updater',
+    'X-GitHub-Api-Version': '2022-11-28',
+}}
+token = os.environ.get('RELEASESPAT', '').strip()
+if token:
+    headers['Authorization'] = f'Bearer {{token}}'
+
+request = Request(asset_url, headers=headers)
+with urlopen(request, timeout=120) as response, open(archive_path, 'wb') as archive_file:
+    shutil.copyfileobj(response, archive_file)
+PY
+
+        tar xzf "$archive" -C "$work_dir"
+        cd "$extract_dir"
+        bash scripts/update.sh
+        echo "=== $(date -Is) finished Fancy Frame self-update to {tag_name} ==="
+        """
+    )
 
 
 def _validate_patch(data: dict) -> list[str]:
@@ -415,6 +598,111 @@ def get_update_check():
         'update_available': update_available,
         'checked_at': int(time.time()),
     })
+
+
+@app.route('/api/update', methods=['POST'])
+def install_latest_update():
+    """Download and install the latest released version in a detached updater unit."""
+    current_version, current_version_source = _get_local_release_version()
+
+    try:
+        latest_release = _fetch_latest_release()
+    except RuntimeError as exc:
+        logger.warning('Update install check failed: %s', exc)
+        return jsonify({'error': str(exc), 'repository': GITHUB_REPO}), 503
+
+    comparison = _compare_release_versions(current_version, latest_release['tag_name'])
+    if comparison == 'current':
+        return jsonify({
+            'status': 'already_current',
+            'repository': GITHUB_REPO,
+            'current_version': current_version,
+            'current_version_source': current_version_source,
+            'latest_version': latest_release['tag_name'],
+        }), 200
+
+    if comparison == 'ahead':
+        return jsonify({
+            'error': 'Current version is newer than the latest release; refusing automatic downgrade',
+            'repository': GITHUB_REPO,
+            'current_version': current_version,
+            'latest_version': latest_release['tag_name'],
+        }), 409
+
+    asset = _find_release_archive_asset(latest_release)
+    if asset is None:
+        return jsonify({
+            'error': 'Latest release does not include a fancy-frame tar.gz asset',
+            'repository': GITHUB_REPO,
+            'latest_version': latest_release['tag_name'],
+        }), 503
+
+    unit_name = f'{UPDATE_UNIT_PREFIX}-{int(time.time())}'
+    lock_data = {
+        'unit_name': unit_name,
+        'target_version': latest_release['tag_name'],
+        'created_at': int(time.time()),
+    }
+    lock_acquired, existing_lock = _acquire_update_lock(lock_data)
+    if not lock_acquired:
+        return jsonify({
+            'status': 'install_in_progress',
+            'repository': GITHUB_REPO,
+            'current_version': current_version,
+            'latest_version': latest_release['tag_name'],
+            'existing_update': existing_lock,
+        }), 409
+
+    script = _build_install_latest_script(latest_release, asset)
+    try:
+        result = subprocess.run(
+            [
+                'systemd-run',
+                '--unit', unit_name,
+                '--collect',
+                '--property=Type=oneshot',
+                '/bin/bash',
+                '-lc',
+                script,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except (FileNotFoundError, subprocess.SubprocessError) as exc:
+        _release_update_lock()
+        logger.exception('Could not launch updater unit %s', unit_name)
+        return jsonify({'error': f'Could not launch updater: {exc}'}), 500
+
+    if result.returncode != 0:
+        _release_update_lock()
+        stderr = result.stderr.strip() or result.stdout.strip() or 'unknown error'
+        logger.error('Updater unit launch failed for %s: %s', unit_name, stderr)
+        return jsonify({'error': f'Failed to launch updater: {stderr}'}), 500
+
+    return jsonify({
+        'status': 'installing',
+        'repository': GITHUB_REPO,
+        'current_version': current_version,
+        'current_version_source': current_version_source,
+        'target_version': latest_release['tag_name'],
+        'unit_name': unit_name,
+        'log_path': str(UPDATE_LOG_FILE),
+    }), 202
+
+
+@app.route('/api/update/status')
+def get_update_status():
+    """Return whether a self-update is currently running and where to read logs."""
+    current_version, current_version_source = _get_local_release_version()
+    status = _current_update_status()
+    status.update({
+        'repository': GITHUB_REPO,
+        'current_version': current_version,
+        'current_version_source': current_version_source,
+    })
+    return jsonify(status)
 
 
 @app.route('/api/config', methods=['PATCH'])

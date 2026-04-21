@@ -140,6 +140,9 @@ sudo systemctl restart fancy-frame-api.service
 
 The service reads `/etc/fancy-frame-api.env` automatically. A GitHub repository secret named `RELEASESPAT` cannot be read directly by the Pi at runtime; use the same token value in this local file.
 
+`POST /api/update` also uses this token when it downloads the latest release tarball, and logs updater output to `/var/log/fancy-frame-update.log`.
+`GET /api/update/status` returns whether the updater is active and includes the current log path and recent log lines.
+
 ## 12. Directory/file map
 
 - scripts/install_initial_setup.sh: installs everything

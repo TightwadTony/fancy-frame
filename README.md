@@ -115,6 +115,8 @@ When the frame is connected to Wi-Fi, it also exposes a local management API on 
 | GET | `/api/info` | Hostname, IP address, uptime |
 | GET | `/api/config` | Current slideshow configuration |
 | GET | `/api/update-check` | Latest GitHub release info and whether an update is available |
+| GET | `/api/update/status` | Whether a self-update is running and where its logs are |
+| POST | `/api/update` | Download and install the latest released version |
 | PATCH | `/api/config` | Update frame name and slideshow settings |
 | GET / POST | `/api/photos` | Photo count and uploads |
 | GET | `/api/photos/list` | Gallery listing for the iOS app |
@@ -124,6 +126,9 @@ When the frame is connected to Wi-Fi, it also exposes a local management API on 
 Use the companion Fancy Frame iPhone app repo to manage settings and photos on the local network.
 
 For authenticated release checks, set `RELEASESPAT` on the Pi in `/etc/fancy-frame-api.env` and restart `fancy-frame-api.service`. The API service loads that file automatically.
+
+`POST /api/update` runs the updater in a detached transient systemd unit and writes progress to `/var/log/fancy-frame-update.log`.
+`GET /api/update/status` reports whether that updater is still running and returns the current log path plus recent log lines.
 
 ## Directory Structure
 
