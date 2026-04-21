@@ -660,6 +660,7 @@ def install_latest_update():
                 'systemd-run',
                 '--unit', unit_name,
                 '--collect',
+                '--no-block',
                 '--property=Type=oneshot',
                 '/bin/bash',
                 '-lc',
