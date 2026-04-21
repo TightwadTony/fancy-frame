@@ -163,7 +163,7 @@ class MockFancyFrame:
         latest_release = {
             "tag_name": "v9.9.9",
             "name": "Test Release",
-            "html_url": "https://github.com/TightwadTony/fancy-frame/releases/tag/v9.9.9",
+            "api_url": "https://api.github.com/repos/TightwadTony/fancy-frame/releases/1",
             "published_at": "2026-04-20T00:00:00Z",
             "prerelease": False,
             "draft": False,
@@ -171,7 +171,6 @@ class MockFancyFrame:
                 {
                     "name": "fancy-frame-v9.9.9.tar.gz",
                     "api_url": "https://api.github.com/repos/TightwadTony/fancy-frame/releases/assets/1",
-                    "browser_download_url": "https://github.com/TightwadTony/fancy-frame/releases/download/v9.9.9/fancy-frame-v9.9.9.tar.gz",
                     "size": 1234,
                 }
             ],

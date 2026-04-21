@@ -254,13 +254,16 @@ def _extract_release_info(payload: dict) -> dict:
     if not isinstance(tag_name, str) or not tag_name.strip():
         raise RuntimeError('GitHub API response did not include a valid tag_name')
 
+    release_api_url = payload.get('url')
+    if not isinstance(release_api_url, str) or not release_api_url:
+        raise RuntimeError('GitHub API response did not include a valid release url')
+
     assets = []
     for asset in payload.get('assets', []):
         if not isinstance(asset, dict):
             continue
         name = asset.get('name')
         api_url = asset.get('url')
-        browser_download_url = asset.get('browser_download_url')
         if not isinstance(name, str) or not name:
             continue
         if not isinstance(api_url, str) or not api_url:
@@ -268,14 +271,13 @@ def _extract_release_info(payload: dict) -> dict:
         assets.append({
             'name': name,
             'api_url': api_url,
-            'browser_download_url': browser_download_url,
             'size': asset.get('size'),
         })
 
     return {
         'tag_name': tag_name.strip(),
         'name': payload.get('name'),
-        'html_url': payload.get('html_url'),
+        'api_url': release_api_url,
         'published_at': payload.get('published_at'),
         'prerelease': bool(payload.get('prerelease', False)),
         'draft': bool(payload.get('draft', False)),

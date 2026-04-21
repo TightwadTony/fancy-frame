@@ -126,6 +126,7 @@ When the frame is connected to Wi-Fi, it also exposes a local management API on 
 Use the companion Fancy Frame iPhone app repo to manage settings and photos on the local network.
 
 For authenticated release checks, set `RELEASESPAT` on the Pi in `/etc/fancy-frame-api.env` and restart `fancy-frame-api.service`. The API service loads that file automatically.
+For private repositories, `/api/update-check` returns GitHub API URLs in `latest_release.api_url` and `latest_release.assets[].api_url` instead of public `github.com` release links.
 
 `POST /api/update` runs the updater in a detached transient systemd unit and writes progress to `/var/log/fancy-frame-update.log`.
 `GET /api/update/status` reports whether that updater is still running and returns the current log path plus recent log lines.
