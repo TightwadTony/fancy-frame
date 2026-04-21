@@ -55,3 +55,21 @@ jobs:
         with:
           files: fancy-frame-${{ steps.version.outputs.version }}.tar.gz
           generate_release_notes: true
+          body: |
+            ## Quick install/update on your Pi
+
+            ```bash
+            VERSION=${{ steps.version.outputs.version }}
+            curl -L "https://github.com/TightwadTony/fancy-frame/releases/download/${VERSION}/fancy-frame-${VERSION}.tar.gz" | tar xz && cd "fancy-frame-${VERSION}" && sudo bash scripts/update.sh
+            ```
+
+            This command downloads, extracts, and runs the update script for this release.
+          body: |
+            ## Quick install/update on your Pi
+
+            ```bash
+            VERSION=${{ steps.version.outputs.version }}
+            curl -L "https://github.com/TightwadTony/fancy-frame/releases/download/${VERSION}/fancy-frame-${VERSION}.tar.gz" | tar xz && cd "fancy-frame-${VERSION}" && sudo bash scripts/update.sh
+            ```
+
+            This command downloads, extracts, and runs the update script for this release.
