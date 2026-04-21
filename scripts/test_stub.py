@@ -75,6 +75,7 @@ class MockFancyFrame:
             "ken_burns_zoom_min": 1.02,
             "ken_burns_zoom_max": 1.20,
         }
+        self.current_version = f"v1.{frame_id}.0"
 
         self.photos = [
             self._make_photo_record(f"photo_{i:03d}.jpg", version=f"v{i}")
@@ -157,6 +158,26 @@ class MockFancyFrame:
         """Return /api/photos/list response."""
         return {"photos": self.photos}
 
+    def get_update_check(self) -> dict[str, Any]:
+        """Return /api/update-check response."""
+        latest_release = {
+            "tag_name": "v9.9.9",
+            "name": "Test Release",
+            "html_url": "https://github.com/TightwadTony/fancy-frame/releases/tag/v9.9.9",
+            "published_at": "2026-04-20T00:00:00Z",
+            "prerelease": False,
+            "draft": False,
+        }
+        return {
+            "repository": "TightwadTony/fancy-frame",
+            "current_version": self.current_version,
+            "current_version_source": "version_file",
+            "latest_release": latest_release,
+            "comparison": "update_available",
+            "update_available": True,
+            "checked_at": int(time.time()),
+        }
+
 
 class MockAPIHandler(BaseHTTPRequestHandler):
     """HTTP request handler for the mock Fancy Frame API."""
@@ -184,6 +205,8 @@ class MockAPIHandler(BaseHTTPRequestHandler):
             self.respond_json(frame.get_info())
         elif path == "/api/config":
             self.respond_json(frame.get_config())
+        elif path == "/api/update-check":
+            self.respond_json(frame.get_update_check())
         elif path == "/api/photos":
             self.respond_json(frame.get_photos())
         elif path == "/api/photos/list":

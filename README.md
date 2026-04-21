@@ -6,6 +6,7 @@ A self-contained digital photo frame system for Raspberry Pi Zero with a full-sc
 
 - **Full-screen slideshow** on the connected LCD panel with crossfade, fade-to-black, wipe, and Ken Burns effects
 - **REST management API** on Wi-Fi for frame info, slideshow settings, photo listing, uploads, deletions, and restart
+- **Release update check endpoint** to compare the installed version with the latest GitHub release
 - **Native iOS 17+ app** with Bonjour discovery for settings and photo management
 - **SMB network share** for adding/removing photos from phones, laptops, or other devices on the same local network
 - **Automatic Wi-Fi onboarding portal** when the device cannot connect to a known network
@@ -113,6 +114,7 @@ When the frame is connected to Wi-Fi, it also exposes a local management API on 
 |--------|------|---------|
 | GET | `/api/info` | Hostname, IP address, uptime |
 | GET | `/api/config` | Current slideshow configuration |
+| GET | `/api/update-check` | Latest GitHub release info and whether an update is available |
 | PATCH | `/api/config` | Update frame name and slideshow settings |
 | GET / POST | `/api/photos` | Photo count and uploads |
 | GET | `/api/photos/list` | Gallery listing for the iOS app |
@@ -120,6 +122,8 @@ When the frame is connected to Wi-Fi, it also exposes a local management API on 
 | POST | `/api/restart` | Reboot the frame |
 
 Use the companion Fancy Frame iPhone app repo to manage settings and photos on the local network.
+
+For authenticated release checks, set `RELEASESPAT` on the Pi in `/etc/fancy-frame-api.env` and restart `fancy-frame-api.service`. The API service loads that file automatically.
 
 ## Directory Structure
 

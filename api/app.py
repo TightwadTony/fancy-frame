@@ -11,6 +11,7 @@ Advertised via Avahi mDNS as _fancyframe._tcp so clients can discover it.
 from __future__ import annotations
 
 import io
+import json
 import logging
 import os
 import re
@@ -21,6 +22,8 @@ import time
 import uuid
 from pathlib import Path
 from urllib.parse import quote
+from urllib.request import Request, urlopen
+from urllib.error import HTTPError, URLError
 from werkzeug.utils import secure_filename
 
 from flask import Flask, jsonify, request, send_file, send_from_directory
@@ -35,12 +38,17 @@ app = Flask(__name__)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 logger = logging.getLogger('fancy-frame-api')
 
+APP_ROOT = Path(__file__).resolve().parent.parent
 CONFIG_FILE = Path('/srv/photos/fancy-frame.conf')
 PHOTOS_DIR = Path('/srv/photos')
 THUMBNAIL_CACHE_DIR = Path('/var/lib/fancy-frame/thumb-cache')
+VERSION_FILE = APP_ROOT / 'VERSION'
 SMB_CONF       = Path('/etc/samba/smb.conf')
 SMB_SHARE_NAME = 'photos'
 THUMBNAIL_LOCK = threading.Semaphore(1)
+
+GITHUB_REPO = 'TightwadTony/fancy-frame'
+GITHUB_LATEST_RELEASE_URL = f'https://api.github.com/repos/{GITHUB_REPO}/releases/latest'
 
 VALID_TRANSITIONS = {'crossfade', 'fade_to_black', 'wipe'}
 VALID_IMAGE_EXTS  = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tif', '.tiff'}
@@ -156,6 +164,119 @@ def _config_to_dict(raw: dict[str, str]) -> dict:
     }
 
 
+def _read_local_version_file() -> str | None:
+    try:
+        version = VERSION_FILE.read_text().strip()
+    except OSError:
+        return None
+    return version or None
+
+
+def _read_local_git_version() -> str | None:
+    try:
+        result = subprocess.run(
+            ['git', '-C', str(APP_ROOT), 'describe', '--tags', '--always', '--dirty'],
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=True,
+        )
+    except (FileNotFoundError, subprocess.SubprocessError):
+        return None
+
+    version = result.stdout.strip()
+    return version or None
+
+
+def _get_local_release_version() -> tuple[str | None, str | None]:
+    version = _read_local_version_file()
+    if version:
+        return version, 'version_file'
+
+    version = _read_local_git_version()
+    if version:
+        return version, 'git'
+
+    return None, None
+
+
+def _parse_release_version(value: str | None) -> tuple[int, int, int] | None:
+    if not value:
+        return None
+
+    match = re.match(r'^v?(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$', value.strip())
+    if not match:
+        return None
+
+    return tuple(int(group) for group in match.groups())
+
+
+def _compare_release_versions(current_version: str | None, latest_version: str | None) -> str:
+    if not current_version or not latest_version:
+        return 'unknown'
+
+    if current_version == latest_version:
+        return 'current'
+
+    current_semver = _parse_release_version(current_version)
+    latest_semver = _parse_release_version(latest_version)
+    if current_semver is None or latest_semver is None:
+        return 'unknown'
+
+    if current_semver < latest_semver:
+        return 'update_available'
+    if current_semver > latest_semver:
+        return 'ahead'
+    return 'current'
+
+
+def _github_api_headers() -> dict[str, str]:
+    headers = {
+        'Accept': 'application/vnd.github+json',
+        'User-Agent': 'fancy-frame-api',
+        'X-GitHub-Api-Version': '2022-11-28',
+    }
+
+    token = os.environ.get('RELEASESPAT', '').strip()
+    if token:
+        headers['Authorization'] = f'Bearer {token}'
+
+    return headers
+
+
+def _fetch_latest_release() -> dict:
+    request = Request(
+        GITHUB_LATEST_RELEASE_URL,
+        headers=_github_api_headers(),
+    )
+
+    try:
+        with urlopen(request, timeout=5) as response:
+            payload = json.load(response)
+    except HTTPError as exc:
+        detail = exc.read().decode('utf-8', errors='replace').strip()
+        raise RuntimeError(f'GitHub API returned HTTP {exc.code}: {detail or exc.reason}') from exc
+    except URLError as exc:
+        raise RuntimeError(f'Could not reach GitHub API: {exc.reason}') from exc
+    except TimeoutError as exc:
+        raise RuntimeError('Timed out while contacting GitHub API') from exc
+    except json.JSONDecodeError as exc:
+        raise RuntimeError('GitHub API returned invalid JSON') from exc
+
+    tag_name = payload.get('tag_name')
+    if not isinstance(tag_name, str) or not tag_name.strip():
+        raise RuntimeError('GitHub API response did not include a valid tag_name')
+
+    return {
+        'tag_name': tag_name.strip(),
+        'name': payload.get('name'),
+        'html_url': payload.get('html_url'),
+        'published_at': payload.get('published_at'),
+        'prerelease': bool(payload.get('prerelease', False)),
+        'draft': bool(payload.get('draft', False)),
+    }
+
+
 def _validate_patch(data: dict) -> list[str]:
     """Return a list of validation error messages (empty = valid)."""
     errors: list[str] = []
@@ -267,6 +388,33 @@ def get_config():
     """Return current slideshow configuration."""
     raw = _read_raw_config()
     return jsonify(_config_to_dict(raw))
+
+
+@app.route('/api/update-check')
+def get_update_check():
+    """Return GitHub latest release info and whether this frame is behind it."""
+    current_version, current_version_source = _get_local_release_version()
+
+    try:
+        latest_release = _fetch_latest_release()
+    except RuntimeError as exc:
+        logger.warning('Release check failed: %s', exc)
+        return jsonify({'error': str(exc), 'repository': GITHUB_REPO}), 503
+
+    comparison = _compare_release_versions(current_version, latest_release['tag_name'])
+    update_available = comparison == 'update_available'
+    if comparison == 'unknown':
+        update_available = None
+
+    return jsonify({
+        'repository': GITHUB_REPO,
+        'current_version': current_version,
+        'current_version_source': current_version_source,
+        'latest_release': latest_release,
+        'comparison': comparison,
+        'update_available': update_available,
+        'checked_at': int(time.time()),
+    })
 
 
 @app.route('/api/config', methods=['PATCH'])

@@ -37,6 +37,7 @@ jobs:
 
           mkdir -p "${ARTIFACT_NAME}"
           cp -a api config portal scripts systemd "${ARTIFACT_NAME}/"
+          printf '%s\n' "${VERSION}" > "${ARTIFACT_NAME}/VERSION"
 
           tar czf "${ARTIFACT_NAME}.tar.gz" "${ARTIFACT_NAME}"
           echo "Built ${ARTIFACT_NAME}.tar.gz"

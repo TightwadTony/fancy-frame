@@ -124,6 +124,22 @@ journalctl -u fancy-frame.service -f
 journalctl -u fancy-frame-wifi-bootstrap.service -f
 journalctl -u fancy-frame-setup-portal.service -f
 
+## 11a. Optional authenticated release checks
+
+If you want `/api/update-check` to use a GitHub fine-grained PAT, set it locally on the Pi:
+
+sudoedit /etc/fancy-frame-api.env
+
+Set:
+
+RELEASESPAT=your_pat_here
+
+Then restart the API:
+
+sudo systemctl restart fancy-frame-api.service
+
+The service reads `/etc/fancy-frame-api.env` automatically. A GitHub repository secret named `RELEASESPAT` cannot be read directly by the Pi at runtime; use the same token value in this local file.
+
 ## 12. Directory/file map
 
 - scripts/install_initial_setup.sh: installs everything

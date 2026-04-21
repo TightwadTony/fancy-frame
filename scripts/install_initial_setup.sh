@@ -395,6 +395,7 @@ cp -a "${PROJECT_ROOT}/portal" "${INSTALL_ROOT}/"
 cp -a "${PROJECT_ROOT}/api" "${INSTALL_ROOT}/"
 cp -a "${PROJECT_ROOT}/config" "${INSTALL_ROOT}/"
 cp -a "${PROJECT_ROOT}/systemd" "${INSTALL_ROOT}/"
+install -m 0644 "${PROJECT_ROOT}/VERSION" "${INSTALL_ROOT}/VERSION"
 chmod +x "${INSTALL_ROOT}"/scripts/*.sh
 
 if [[ -d "${LEGACY_INSTALL_ROOT}" ]] && [[ ! -L "${LEGACY_INSTALL_ROOT}" ]]; then
@@ -444,6 +445,16 @@ install -m 0644 "${INSTALL_ROOT}/systemd/fancy-frame-wifi-bootstrap.service" /et
 install -m 0644 "${INSTALL_ROOT}/systemd/fancy-frame-setup-mode.service" /etc/systemd/system/fancy-frame-setup-mode.service
 install -m 0644 "${INSTALL_ROOT}/systemd/fancy-frame-setup-portal.service" /etc/systemd/system/fancy-frame-setup-portal.service
 install -m 0644 "${INSTALL_ROOT}/systemd/fancy-frame-api.service" /etc/systemd/system/fancy-frame-api.service
+
+if [[ ! -f /etc/fancy-frame-api.env ]]; then
+  cat > /etc/fancy-frame-api.env <<'EOF'
+# Optional GitHub fine-grained PAT used by /api/update-check.
+# This value is not bundled into releases. Set it locally on the Pi.
+# If you store the PAT in a GitHub repository secret, use the same value here.
+RELEASESPAT=
+EOF
+  chmod 0600 /etc/fancy-frame-api.env
+fi
 
 systemctl daemon-reload
 systemctl enable fancy-frame.service

@@ -8,6 +8,7 @@ Conflicts=fancy-frame-setup-mode.service
 [Service]
 Type=simple
 Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-/etc/fancy-frame-api.env
 ExecStart=/usr/bin/python3 /opt/fancy-frame/api/app.py
 Restart=always
 RestartSec=3
