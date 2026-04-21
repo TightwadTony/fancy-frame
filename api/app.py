@@ -433,21 +433,19 @@ def _build_install_latest_script(release: dict, asset: dict) -> str:
         archive="$work_dir"/{shlex.quote(asset_name)}
         extract_dir="$work_dir"/{shlex.quote(extracted_dir)}
 
-        python3 - {shlex.quote(asset_api_url)} "$archive" <<'PY'
-import os
+        python3 - {shlex.quote(asset_api_url)} "$archive" "${{RELEASESPAT:-}}" <<'PY'
 import shutil
 import sys
 from urllib.request import Request, urlopen
 
-asset_url, archive_path = sys.argv[1], sys.argv[2]
+asset_url, archive_path, token = sys.argv[1], sys.argv[2], sys.argv[3].strip()
 headers = {{
     'Accept': 'application/octet-stream',
     'User-Agent': 'fancy-frame-updater',
     'X-GitHub-Api-Version': '2022-11-28',
 }}
-token = os.environ.get('RELEASESPAT', '').strip()
 if token:
-    headers['Authorization'] = f'Bearer {{token}}'
+    headers['Authorization'] = 'token ' + token
 
 request = Request(asset_url, headers=headers)
 with urlopen(request, timeout=120) as response, open(archive_path, 'wb') as archive_file:

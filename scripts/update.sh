@@ -11,7 +11,15 @@
 # Usage:
 #   sudo bash scripts/update.sh
 #
+
 set -euo pipefail
+
+# Ensure RELEASESPAT is available for updater subprocesses
+if [ -f /etc/fancy-frame-api.env ]; then
+  set -a
+  . /etc/fancy-frame-api.env
+  set +a
+fi
 
 if [[ "${EUID}" -ne 0 ]]; then
   echo "Run this script as root: sudo bash scripts/update.sh"
