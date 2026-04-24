@@ -390,12 +390,16 @@ upsert_conf_key /srv/photos/fancy-frame.conf frame_name "${FRAME_NAME}"
 ln -sfn /srv/photos/fancy-frame.conf /srv/photos/photo-frame.conf
 
 mkdir -p "${INSTALL_ROOT}"
-cp -a "${PROJECT_ROOT}/scripts" "${INSTALL_ROOT}/"
-cp -a "${PROJECT_ROOT}/portal" "${INSTALL_ROOT}/"
-cp -a "${PROJECT_ROOT}/api" "${INSTALL_ROOT}/"
-cp -a "${PROJECT_ROOT}/config" "${INSTALL_ROOT}/"
-cp -a "${PROJECT_ROOT}/systemd" "${INSTALL_ROOT}/"
-install -m 0644 "${PROJECT_ROOT}/VERSION" "${INSTALL_ROOT}/VERSION"
+if [[ "$(realpath "${PROJECT_ROOT}")" != "$(realpath "${INSTALL_ROOT}")" ]]; then
+  cp -a "${PROJECT_ROOT}/scripts" "${INSTALL_ROOT}/"
+  cp -a "${PROJECT_ROOT}/portal" "${INSTALL_ROOT}/"
+  cp -a "${PROJECT_ROOT}/api" "${INSTALL_ROOT}/"
+  cp -a "${PROJECT_ROOT}/config" "${INSTALL_ROOT}/"
+  cp -a "${PROJECT_ROOT}/systemd" "${INSTALL_ROOT}/"
+  install -m 0644 "${PROJECT_ROOT}/VERSION" "${INSTALL_ROOT}/VERSION"
+else
+  echo "Installer running from ${INSTALL_ROOT}; skipping self-copy step."
+fi
 chmod +x "${INSTALL_ROOT}"/scripts/*.sh
 
 if [[ -d "${LEGACY_INSTALL_ROOT}" ]] && [[ ! -L "${LEGACY_INSTALL_ROOT}" ]]; then

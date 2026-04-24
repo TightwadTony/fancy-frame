@@ -87,6 +87,92 @@ After reboot:
 - If Wi-Fi is configured and reachable: slideshow starts
 - If Wi-Fi is not connected within ~60 seconds after boot: onboarding AP activates
 
+## Build a Preinstalled SD Image (pi-gen, macOS + Docker)
+
+If you want a flashable image that already includes Fancy Frame, use the included `pi-gen/` tooling.
+
+### What this build does
+
+- Builds **64-bit Raspberry Pi OS** using pi-gen's `arm64` branch
+- Includes Fancy Frame files and runs `scripts/install_initial_setup.sh` during image creation
+- Supports model selection in config: `zero2w`, `pi4`, or `pi5`
+- Applies two hardware profiles:
+  - `zero2w` profile: strict service pruning + 1080p cap
+  - `pi45` profile (used for `pi4` and `pi5`): balanced defaults + 1080p cap
+
+### 1. Configure build options
+
+Edit `pi-gen/config` and set at least:
+
+```bash
+PI_GEN_BRANCH=arm64
+export FANCY_FRAME_TARGET_MODEL=pi5   # zero2w | pi4 | pi5
+TIMEZONE_DEFAULT=America/Regina
+WPA_COUNTRY=CA
+TARGET_HOSTNAME=photo-frame
+FIRST_USER_NAME=photo
+FIRST_USER_PASS=photo
+```
+
+Notes:
+- `FANCY_FRAME_TARGET_MODEL=zero2w` selects the stricter low-resource profile.
+- `FANCY_FRAME_TARGET_MODEL=pi4` and `pi5` both map to the shared `pi45` profile.
+
+### 2. Build the image
+
+From the repo root:
+
+```bash
+bash pi-gen/build-image.sh
+```
+
+Optional:
+
+```bash
+bash pi-gen/build-image.sh --no-update
+```
+
+This wrapper script:
+- Clones/updates pi-gen under `pi-gen/.build/pi-gen`
+- Copies your local `stage-fancy-frame` and `pi-gen/config`
+- Syncs this repository into the stage payload
+- Launches pi-gen via Docker
+
+### 3. Find the output image
+
+Build artifacts are placed in:
+
+```bash
+pi-gen/.build/pi-gen/deploy/
+```
+
+Image names include the selected model, for example:
+
+```bash
+2026-04-23-fancy-frame-pi5-arm64.img.xz
+```
+
+### 4. Flash to SD card
+
+- Raspberry Pi Imager: select the `.img.xz` file directly
+- Or command line:
+
+```bash
+xz -d <image.img.xz>
+sudo dd if=<image.img> of=/dev/diskN bs=4m status=progress
+```
+
+### Troubleshooting pi-gen builds
+
+- If Docker says a build container is already running, stop it:
+
+```bash
+docker stop pigen_work_<model>
+```
+
+- If a previous build was interrupted, re-run `bash pi-gen/build-image.sh`; stale stopped containers are cleaned automatically.
+- Build workspace cache lives in `pi-gen/.build/` and can be removed to force a clean rebuild.
+
 ## Connecting to the Photo Share
 
 ### Success: Wi-Fi connected

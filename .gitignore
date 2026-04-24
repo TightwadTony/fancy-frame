@@ -62,3 +62,6 @@ ehthumbs.db
 test_output/
 *.orig
 .aider*
+
+# pi-gen build working directory (can be gigabytes)
+pi-gen/.build/

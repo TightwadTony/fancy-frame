@@ -1,0 +1,45 @@
+# pi-gen configuration for Fancy Frame
+# Reference: https://github.com/RPi-Distro/pi-gen#config
+
+# ── Image identity ─────────────────────────────────────────────────────────────
+IMG_NAME="fancy-frame"
+RELEASE=trixie
+DEPLOY_COMPRESSION=xz
+
+# Only build the lite base + our custom stage (no desktop, no GUI)
+STAGE_LIST="stage0 stage1 stage2 stage-fancy-frame"
+
+# ── Build arch / target hardware ──────────────────────────────────────────────
+# 64-bit images are built from pi-gen's arm64 branch.
+PI_GEN_BRANCH=arm64
+
+# Target model used by build-image.sh for naming and profile mapping.
+# Allowed values: zero2w, pi4, pi5
+# Profile mapping:
+#   zero2w -> zero2w profile (strict service pruning)
+#   pi4/pi5 -> pi45 profile (balanced performance)
+export FANCY_FRAME_TARGET_MODEL=pi5
+
+# ── Locale / timezone ──────────────────────────────────────────────────────────
+# Override any of these on the command line, e.g.:
+#   TIMEZONE_DEFAULT=Europe/London bash pi-gen/build-image.sh
+LOCALE_DEFAULT=en_US.UTF-8
+KEYBOARD_KEYMAP=us
+KEYBOARD_LAYOUT="English (US)"
+TIMEZONE_DEFAULT=America/Regina
+
+# ── Hostname ───────────────────────────────────────────────────────────────────
+TARGET_HOSTNAME=photo-frame4
+
+# ── Default user ───────────────────────────────────────────────────────────────
+# The user 'photo' owns all Fancy Frame files and the Samba share.
+FIRST_USER_NAME=photo
+# Default password — change after first boot or flash with a pre-configured SD.
+FIRST_USER_PASS=photo
+
+# ── SSH ────────────────────────────────────────────────────────────────────────
+ENABLE_SSH=1
+
+# ── WiFi regulatory domain ─────────────────────────────────────────────────────
+# Two-letter ISO 3166-1 alpha-2 country code.  Must match your region.
+WPA_COUNTRY=CA
