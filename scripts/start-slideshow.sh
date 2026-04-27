@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-xset s off
-xset -dpms
-xset s noblank
+if command -v xset >/dev/null 2>&1; then
+	xset s off
+	xset -dpms
+	xset s noblank
+fi
 
 # Prefer 1920x1080 so the TV's scaler doesn't distort the image.
-xrandr --output HDMI-1 --mode 1920x1080 2>/dev/null || true
+if command -v xrandr >/dev/null 2>&1; then
+	xrandr --output HDMI-1 --mode 1920x1080 2>/dev/null || true
+fi
 
 sleep 3
 

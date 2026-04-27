@@ -18,7 +18,7 @@ PI_GEN_BRANCH=arm64
 # Profile mapping:
 #   zero2w -> zero2w profile (strict service pruning)
 #   pi4/pi5 -> pi45 profile (balanced performance)
-export FANCY_FRAME_TARGET_MODEL=pi5
+export FANCY_FRAME_TARGET_MODEL=zero2w
 
 # ── Locale / timezone ──────────────────────────────────────────────────────────
 # Override any of these on the command line, e.g.:
@@ -29,7 +29,7 @@ KEYBOARD_LAYOUT="English (US)"
 TIMEZONE_DEFAULT=America/Regina
 
 # ── Hostname ───────────────────────────────────────────────────────────────────
-TARGET_HOSTNAME=photo-frame4
+TARGET_HOSTNAME=photo-frame3
 
 # ── Default user ───────────────────────────────────────────────────────────────
 # The user 'photo' owns all Fancy Frame files and the Samba share.

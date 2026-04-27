@@ -563,6 +563,57 @@ def _config_mtime(path: str) -> float:
     except OSError:
         return 0.0
 
+
+def _render_placeholder(size: tuple[int, int]) -> pygame.Surface:
+    """
+    Build a static 'no photos' screen shown when the photo directory is empty.
+    Uses only pygame's built-in font so there are no extra dependencies.
+    No Ken Burns or transition effects are applied to this surface.
+    """
+    surf = pygame.Surface(size).convert()
+    surf.fill(BLACK)
+    w, h = size
+
+    try:
+        pygame.font.init()
+
+        title_size = max(64, h // 7)
+        sub_size   = max(28, h // 20)
+
+        title_font = pygame.font.Font(None, title_size)
+        sub_font   = pygame.font.Font(None, sub_size)
+
+        title_surf = title_font.render('FANCY FRAME', True, (230, 230, 230))
+        sub_surf   = sub_font.render('Add photos to get started', True, (110, 110, 110))
+
+        gap     = max(16, h // 30)
+        block_h = title_surf.get_height() + gap + sub_surf.get_height()
+        ty      = (h - block_h) // 2
+        sy      = ty + title_surf.get_height() + gap
+
+        tx = (w - title_surf.get_width()) // 2
+        sx = (w - sub_surf.get_width()) // 2
+
+        surf.blit(title_surf, (tx, ty))
+        surf.blit(sub_surf,   (sx, sy))
+
+        # Subtle decorative border around the title text.
+        pad_x = max(24, w // 25)
+        pad_y = max(14, h // 40)
+        border_rect = pygame.Rect(
+            tx - pad_x,
+            ty - pad_y,
+            title_surf.get_width() + pad_x * 2,
+            title_surf.get_height() + pad_y * 2,
+        )
+        pygame.draw.rect(surf, (70, 70, 70), border_rect, 2, border_radius=6)
+
+    except Exception as exc:
+        print(f'slideshow: placeholder render failed: {exc}', file=sys.stderr)
+
+    return surf
+
+
 # ---------------------------------------------------------------------------
 # Main loop
 # ---------------------------------------------------------------------------
@@ -594,11 +645,12 @@ def main() -> None:
     current: pygame.Surface = pygame.Surface(size).convert()
     current.fill(BLACK)
 
-    photos:         list[str]  = []
-    idx:            int        = 0
-    last_refresh:   float      = 0.0
-    preloader      = Preloader(size)
-    preloaded_path: str | None = None
+    photos:              list[str]            = []
+    idx:                 int                  = 0
+    last_refresh:        float                = 0.0
+    preloader           = Preloader(size)
+    preloaded_path:      str | None           = None
+    placeholder_surf:    pygame.Surface | None = None
 
     while True:
         now = time.monotonic()
@@ -622,9 +674,18 @@ def main() -> None:
             last_refresh = now
 
         if not photos:
+            # Show the logo placeholder statically — no effects, no Ken Burns.
+            if placeholder_surf is None:
+                placeholder_surf = _render_placeholder(size)
+            screen.blit(placeholder_surf, (0, 0))
+            pygame.display.flip()
+            # Use as the base for the first real photo's transition.
+            current = placeholder_surf
             if not wait(5, clock):
                 break
             continue
+
+        placeholder_surf = None  # release once photos are available
 
         # Pick the next photo; reshuffle when the list is exhausted.
         path = photos[idx % len(photos)]

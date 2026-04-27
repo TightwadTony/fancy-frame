@@ -362,6 +362,7 @@ fi
 apt install -y \
   xserver-xorg \
   xinit \
+  x11-xserver-utils \
   python3-pygame \
   python3-pil \
   imagemagick \
@@ -407,6 +408,11 @@ if [[ -d "${LEGACY_INSTALL_ROOT}" ]] && [[ ! -L "${LEGACY_INSTALL_ROOT}" ]]; the
 fi
 ln -sfn "${INSTALL_ROOT}" "${LEGACY_INSTALL_ROOT}"
 ln -sfn /var/lib/fancy-frame /var/lib/photo-frame
+
+# Dedicated-frame images must not drop into Raspberry Pi OS first-boot user setup.
+systemctl disable userconfig.service >/dev/null 2>&1 || true
+systemctl mask userconfig.service >/dev/null 2>&1 || true
+rm -f /etc/xdg/autostart/piwiz.desktop
 
 
 echo "Installing hostapd and dnsmasq configs..."
