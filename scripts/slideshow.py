@@ -33,14 +33,35 @@ from PIL import Image, ImageOps
 
 PHOTO_DIR = os.environ.get('FANCY_FRAME_PHOTO_DIR', '/srv/photos')
 CONFIG_FILE = os.environ.get('FANCY_FRAME_CONFIG_FILE', '/srv/photos/fancy-frame.conf')
+HW_PROFILE_FILE = Path(os.environ.get('FANCY_FRAME_HW_PROFILE_FILE', '/etc/fancy-frame-hw-profile'))
 RENDER_CACHE_DIR = Path(os.environ.get('FANCY_FRAME_RENDER_CACHE_DIR', '/var/lib/fancy-frame/render-cache'))
 CONFIG_CHECK_SECS = 300   # re-read config every 5 minutes
 REFRESH_SECS = int(os.environ.get('FANCY_FRAME_REFRESH_SECONDS', '300'))
-FPS = 20    # matches Pi Zero 2W display throughput
+HW_PROFILE = ''
+try:
+    HW_PROFILE = HW_PROFILE_FILE.read_text().strip()
+except OSError:
+    HW_PROFILE = ''
+
+DEFAULT_FPS = 30 if HW_PROFILE == 'pi45' else 20
+FPS = int(os.environ.get('FANCY_FRAME_FPS', str(DEFAULT_FPS)))
+DEFAULT_TRANSITION_FPS = 60 if HW_PROFILE == 'pi45' else FPS
+TRANSITION_FPS = int(os.environ.get('FANCY_FRAME_TRANSITION_FPS', str(DEFAULT_TRANSITION_FPS)))
+DEFAULT_KEN_BURNS_FPS = 60 if HW_PROFILE == 'pi45' else FPS
+KEN_BURNS_FPS = int(os.environ.get('FANCY_FRAME_KEN_BURNS_FPS', str(DEFAULT_KEN_BURNS_FPS)))
+DEFAULT_KEN_BURNS_MOTION_SECONDS = 18.0 if HW_PROFILE == 'pi45' else 0.0
+KEN_BURNS_MOTION_SECONDS = float(
+    os.environ.get('FANCY_FRAME_KEN_BURNS_MOTION_SECONDS', str(DEFAULT_KEN_BURNS_MOTION_SECONDS))
+)
+PI45_STATIC_ZOOM = os.environ.get('FANCY_FRAME_PI45_STATIC_ZOOM', '1').strip().lower() in ('1', 'true', 'yes')
+DEFAULT_PI45_FIXED_ZOOM = 1.06
+PI45_FIXED_ZOOM = float(os.environ.get('FANCY_FRAME_PI45_FIXED_ZOOM', str(DEFAULT_PI45_FIXED_ZOOM)))
 RENDER_QUALITY = int(os.environ.get('FANCY_FRAME_RENDER_QUALITY', '88'))
 
 IMAGE_EXTS = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tif', '.tiff'}
 BLACK = (0, 0, 0)
+DEFAULT_TRANSITION_NAMES = ('crossfade', 'fade_to_black', 'wipe')
+PI45_TRANSITION_NAMES = ('slide', 'cover')
 
 RENDER_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 _RENDER_LOCKS: dict[str, threading.Lock] = {}
@@ -149,17 +170,17 @@ def load_surface(path: str, size: tuple[int, int]) -> pygame.Surface | None:
 # ---------------------------------------------------------------------------
 
 
-def _tick(clock: pygame.time.Clock) -> None:
+def _tick(clock: pygame.time.Clock, fps: int = FPS) -> None:
     """Use busy-loop pacing when available for steadier frame timing."""
     if hasattr(clock, 'tick_busy_loop'):
-        clock.tick_busy_loop(FPS)
+        clock.tick_busy_loop(fps)
     else:
-        clock.tick(FPS)
+        clock.tick(fps)
 
 
-def _pump(clock: pygame.time.Clock) -> bool:
+def _pump(clock: pygame.time.Clock, fps: int = FPS) -> bool:
     """Tick clock and drain event queue. Returns False if quit requested."""
-    _tick(clock)
+    _tick(clock, fps)
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             return False
@@ -177,14 +198,14 @@ def crossfade(
     _scratch_black: pygame.Surface | None = None,
 ) -> bool:
     """Alpha-blend old_surf → new_surf."""
-    steps = max(1, int(duration * FPS))
+    steps = max(1, int(duration * TRANSITION_FPS))
     for i in range(steps, 0, -1):
         alpha = int(255 * i / steps)
         screen.blit(new_surf, (0, 0))
         old_surf.set_alpha(alpha)
         screen.blit(old_surf, (0, 0))
         pygame.display.flip()
-        if not _pump(clock):
+        if not _pump(clock, TRANSITION_FPS):
             old_surf.set_alpha(None)
             return False
 
@@ -204,7 +225,7 @@ def fade_to_black(
 ) -> bool:
     """Fade old image to black, then fade new image in."""
     half = duration / 2
-    steps = max(1, int(half * FPS))
+    steps = max(1, int(half * TRANSITION_FPS))
     black = scratch_black if scratch_black is not None else pygame.Surface(screen.get_size()).convert()
     black.fill(BLACK)
 
@@ -215,7 +236,7 @@ def fade_to_black(
         black.set_alpha(alpha)
         screen.blit(black, (0, 0))
         pygame.display.flip()
-        if not _pump(clock):
+        if not _pump(clock, TRANSITION_FPS):
             return False
 
     # Fade in: draw new image opaque, overlay black with decreasing alpha
@@ -226,7 +247,7 @@ def fade_to_black(
         black.set_alpha(alpha)
         screen.blit(black, (0, 0))
         pygame.display.flip()
-        if not _pump(clock):
+        if not _pump(clock, TRANSITION_FPS):
             return False
 
     screen.blit(new_surf, (0, 0))
@@ -244,7 +265,7 @@ def wipe(
 ) -> bool:
     """Hard edge sweeps across revealing the new image."""
     sw, sh = screen.get_size()
-    steps = max(1, int(duration * FPS))
+    steps = max(1, int(duration * TRANSITION_FPS))
     direction = random.choice(('left', 'right', 'top', 'bottom'))
 
     for i in range(1, steps + 1):
@@ -267,7 +288,88 @@ def wipe(
             screen.blit(new_surf, (0, y), (0, y, sw, h))
 
         pygame.display.flip()
-        if not _pump(clock):
+        if not _pump(clock, TRANSITION_FPS):
+            return False
+
+    screen.blit(new_surf, (0, 0))
+    pygame.display.flip()
+    return True
+
+
+def cover(
+    screen: pygame.Surface,
+    old_surf: pygame.Surface,
+    new_surf: pygame.Surface,
+    duration: float,
+    clock: pygame.time.Clock,
+    _scratch_black: pygame.Surface | None = None,
+) -> bool:
+    """Slide the new image over the old one using only offset blits."""
+    sw, sh = screen.get_size()
+    steps = max(1, int(duration * TRANSITION_FPS))
+    direction = random.choice(('left', 'right', 'top', 'bottom'))
+
+    for i in range(1, steps + 1):
+        progress = i / steps
+        screen.blit(old_surf, (0, 0))
+
+        if direction == 'left':
+            x = int((progress - 1.0) * sw)
+            screen.blit(new_surf, (x, 0))
+        elif direction == 'right':
+            x = int((1.0 - progress) * sw)
+            screen.blit(new_surf, (x, 0))
+        elif direction == 'top':
+            y = int((progress - 1.0) * sh)
+            screen.blit(new_surf, (0, y))
+        else:  # bottom
+            y = int((1.0 - progress) * sh)
+            screen.blit(new_surf, (0, y))
+
+        pygame.display.flip()
+        if not _pump(clock, TRANSITION_FPS):
+            return False
+
+    screen.blit(new_surf, (0, 0))
+    pygame.display.flip()
+    return True
+
+
+def slide(
+    screen: pygame.Surface,
+    old_surf: pygame.Surface,
+    new_surf: pygame.Surface,
+    duration: float,
+    clock: pygame.time.Clock,
+    _scratch_black: pygame.Surface | None = None,
+) -> bool:
+    """Push the old image out while the new image enters from the opposite edge."""
+    sw, sh = screen.get_size()
+    steps = max(1, int(duration * TRANSITION_FPS))
+    direction = random.choice(('left', 'right', 'top', 'bottom'))
+
+    for i in range(1, steps + 1):
+        progress = i / steps
+
+        if direction == 'left':
+            delta = int(progress * sw)
+            screen.blit(old_surf, (-delta, 0))
+            screen.blit(new_surf, (sw - delta, 0))
+        elif direction == 'right':
+            delta = int(progress * sw)
+            screen.blit(old_surf, (delta, 0))
+            screen.blit(new_surf, (delta - sw, 0))
+        elif direction == 'top':
+            delta = int(progress * sh)
+            screen.blit(old_surf, (0, -delta))
+            screen.blit(new_surf, (0, sh - delta))
+        else:  # bottom
+            delta = int(progress * sh)
+            screen.blit(old_surf, (0, delta))
+            screen.blit(new_surf, (0, delta - sh))
+
+        pygame.display.flip()
+        if not _pump(clock, TRANSITION_FPS):
             return False
 
     screen.blit(new_surf, (0, 0))
@@ -279,6 +381,8 @@ def wipe(
 TRANSITION_FNS: dict[str, object] = {
     'crossfade':     crossfade,
     'fade_to_black': fade_to_black,
+    'cover':         cover,
+    'slide':         slide,
     'wipe':          wipe,
 }
 
@@ -332,6 +436,11 @@ class KenBurns:
         zb = random.uniform(zoom_min, zoom_max)
         if random.random() < 0.5:
             za, zb = zb, za
+        if HW_PROFILE == 'pi45' and PI45_STATIC_ZOOM:
+            # Keep zoom fixed across and within slides to avoid edge shimmer.
+            z = min(max(PI45_FIXED_ZOOM, zoom_min), zoom_max)
+            za = z
+            zb = z
 
         # Crop sizes at each end: smaller crop = more zoomed in.
         self._cwa = int(sw / za)
@@ -339,24 +448,40 @@ class KenBurns:
         self._cwb = int(sw / zb)
         self._chb = int(sh / zb)
 
-        # Random pan: top-left of crop rect, clamped so crop stays in bounds.
-        self._xa = random.randint(0, max(0, bw - self._cwa))
-        self._ya = random.randint(0, max(0, bh - self._cha))
-        self._xb = random.randint(0, max(0, bw - self._cwb))
-        self._yb = random.randint(0, max(0, bh - self._chb))
+        # Biased pan: ensure start and end come from opposite halves of the
+        # available slack so every slide has a meaningful cross-frame pan.
+        def _pan_pair(slack_a: int, slack_b: int) -> tuple[int, int]:
+            mid_a, mid_b = slack_a // 2, slack_b // 2
+            if random.random() < 0.5:  # start-side → end-side
+                return random.randint(0, max(0, mid_a)), random.randint(mid_b, max(mid_b, slack_b))
+            else:                       # end-side → start-side
+                return random.randint(mid_a, max(mid_a, slack_a)), random.randint(0, max(0, mid_b))
+
+        slack_xa = max(0, bw - self._cwa)
+        slack_ya = max(0, bh - self._cha)
+        slack_xb = max(0, bw - self._cwb)
+        slack_yb = max(0, bh - self._chb)
+        self._xa, self._xb = _pan_pair(slack_xa, slack_xb)
+        self._ya, self._yb = _pan_pair(slack_ya, slack_yb)
 
     def blit_at(self, screen: pygame.Surface, t: float) -> None:
         """Render the zoom+pan at smoothstepped progress t ∈ [0, 1]."""
-        e = t * t * (3 - 2 * t)
-        x  = int(self._xa  + (self._xb  - self._xa)  * e)
-        y  = int(self._ya  + (self._yb  - self._ya)  * e)
-        cw = int(self._cwa + (self._cwb - self._cwa) * e)
-        ch = int(self._cha + (self._chb - self._cha) * e)
+        # Pi 4/5 looks smoother with linear velocity; smoothstep lingers near ends.
+        e = t if HW_PROFILE == 'pi45' else t * t * (3 - 2 * t)
+        x  = round(self._xa  + (self._xb  - self._xa)  * e)
+        y  = round(self._ya  + (self._yb  - self._ya)  * e)
+        cw = round(self._cwa + (self._cwb - self._cwa) * e)
+        ch = round(self._cha + (self._chb - self._cha) * e)
         bw, bh = self._big.get_size()
         cw = min(cw, bw - x)
         ch = min(ch, bh - y)
         crop = self._big.subsurface(pygame.Rect(x, y, cw, ch))
-        pygame.transform.scale(crop, (self._sw, self._sh), screen)
+        if HW_PROFILE == 'pi45':
+            pygame.transform.scale(crop, (self._sw, self._sh), screen)
+        elif hasattr(pygame.transform, 'smoothscale'):
+            pygame.transform.smoothscale(crop, (self._sw, self._sh), screen)
+        else:
+            pygame.transform.scale(crop, (self._sw, self._sh), screen)
 
 
 def ken_burns_dwell(
@@ -375,7 +500,9 @@ def ken_burns_dwell(
         t = min(1.0, (now - start) / seconds)
         kb.blit_at(screen, t)
         pygame.display.flip()
-        _tick(clock)
+        # On pi45 vsync (60 Hz) paces the loop; clock.tick would cause 3:2 pulldown judder.
+        if HW_PROFILE != 'pi45':
+            _tick(clock, KEN_BURNS_FPS)
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return False
@@ -442,7 +569,22 @@ class Preloader:
 # Config file
 # ---------------------------------------------------------------------------
 
-_DEFAULT_CONFIG = """\
+def _read_hw_profile() -> str:
+    try:
+        return HW_PROFILE_FILE.read_text().strip()
+    except OSError:
+        return ''
+
+
+def _default_transition_names(hw_profile: str | None = None) -> tuple[str, ...]:
+    profile = hw_profile if hw_profile is not None else _read_hw_profile()
+    if profile == 'pi45':
+        return PI45_TRANSITION_NAMES
+    return DEFAULT_TRANSITION_NAMES
+
+
+def _build_default_config(default_transition_value: str) -> str:
+    return f"""\
 # Fancy Frame Configuration
 # Edit this file to change slideshow behaviour.
 # Changes take effect within 5 minutes (the slideshow restarts automatically).
@@ -457,8 +599,9 @@ slide_seconds = 25
 fade_seconds = 1.5
 
 # Which transitions to use (comma-separated).
-# Options: crossfade, fade_to_black, wipe
-transitions = crossfade, fade_to_black, wipe
+# Options: crossfade, fade_to_black, wipe, cover, slide
+# Pi 4/5 fast set: slide, cover, wipe
+transitions = {default_transition_value}
 
 # Ken Burns zoom and pan effect (yes / no)
 ken_burns = yes
@@ -472,7 +615,7 @@ _CONFIG_DEFAULTS = {
     'frame_name':         'Fancy Frame',
     'slide_seconds':      '25',
     'fade_seconds':       '1.5',
-    'transitions':        'crossfade, fade_to_black, wipe',
+    'transitions':        ', '.join(DEFAULT_TRANSITION_NAMES),
     'ken_burns':          'yes',
     'ken_burns_zoom_min': '1.02',
     'ken_burns_zoom_max': '1.20',
@@ -518,23 +661,29 @@ def load_config(path: str = CONFIG_FILE) -> types.SimpleNamespace:
     Read the config file and return a SimpleNamespace of typed settings.
     Creates a default config file if none exists.
     """
+    hw_profile = _read_hw_profile()
+    default_transition_names = _default_transition_names(hw_profile)
+    default_transition_value = ', '.join(default_transition_names)
+
     if not os.path.exists(path):
         try:
             with open(path, 'w') as f:
-                f.write(_DEFAULT_CONFIG)
+                f.write(_build_default_config(default_transition_value))
             os.chmod(path, 0o666)
             print(f'slideshow: created default config at {path}', file=sys.stderr)
         except OSError as exc:
             print(f'slideshow: could not write default config: {exc}', file=sys.stderr)
 
-    raw = {**_CONFIG_DEFAULTS, **_parse_config_file(path)}
+    file_raw = _parse_config_file(path)
+    raw = {**_CONFIG_DEFAULTS, **file_raw}
 
     # Parse transition function list
-    names = [n.strip() for n in raw.get('transitions', _CONFIG_DEFAULTS['transitions']).split(',')]
+    transition_value = file_raw.get('transitions', default_transition_value)
+    names = [n.strip() for n in transition_value.split(',')]
     fns = [TRANSITION_FNS[n] for n in names if n in TRANSITION_FNS]
     if not fns:
-        print('slideshow: no valid transitions configured; falling back to defaults', file=sys.stderr)
-        fns = list(TRANSITION_FNS.values())
+        print('slideshow: no valid transitions configured; falling back to hardware defaults', file=sys.stderr)
+        fns = [TRANSITION_FNS[name] for name in default_transition_names]
 
     slide_secs = _safe_float(raw, 'slide_seconds', minimum=1.0)
     fade_secs = _safe_float(raw, 'fade_seconds', minimum=0.0)
@@ -731,7 +880,13 @@ def main() -> None:
             ):
                 break
             dwell = max(0.0, cfg.slide_secs - cfg.fade_secs)
-            if not ken_burns_dwell(screen, next_kb, dwell, clock):
+            motion_secs = dwell
+            if HW_PROFILE == 'pi45' and KEN_BURNS_MOTION_SECONDS > 0.0:
+                motion_secs = min(dwell, KEN_BURNS_MOTION_SECONDS)
+            if not ken_burns_dwell(screen, next_kb, motion_secs, clock):
+                break
+            still_secs = max(0.0, dwell - motion_secs)
+            if still_secs > 0.0 and not wait(still_secs, clock):
                 break
             # Capture the final pan position as the base for the next transition.
             current = pygame.Surface(size).convert()

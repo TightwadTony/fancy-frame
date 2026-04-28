@@ -11,10 +11,13 @@ Advertised via Avahi mDNS as _fancyframe._tcp so clients can discover it.
 from __future__ import annotations
 
 import io
+import hashlib
+import hmac
 import json
 import logging
 import os
 import re
+import secrets
 import shlex
 import socket
 import subprocess
@@ -22,6 +25,7 @@ import threading
 import time
 import textwrap
 import uuid
+from functools import wraps
 from pathlib import Path
 from urllib.parse import quote
 from urllib.request import Request, urlopen
@@ -43,6 +47,7 @@ logger = logging.getLogger('fancy-frame-api')
 APP_ROOT = Path(__file__).resolve().parent.parent
 CONFIG_FILE = Path('/srv/photos/fancy-frame.conf')
 PHOTOS_DIR = Path('/srv/photos')
+HW_PROFILE_FILE = Path('/etc/fancy-frame-hw-profile')
 THUMBNAIL_CACHE_DIR = Path('/var/lib/fancy-frame/thumb-cache')
 VERSION_FILE = APP_ROOT / 'VERSION'
 UPDATE_LOCK_FILE = Path('/var/lib/fancy-frame/update.lock')
@@ -50,25 +55,197 @@ UPDATE_LOG_FILE = Path('/var/log/fancy-frame-update.log')
 SMB_CONF       = Path('/etc/samba/smb.conf')
 SMB_SHARE_NAME = 'photos'
 THUMBNAIL_LOCK = threading.Semaphore(1)
+API_AUTH_USER = 'fancy-frame-api'
+API_TOKEN_STORE = Path('/var/lib/fancy-frame/api-auth-tokens.json')
+API_PASSWORD_HASH_FILE = Path('/etc/fancy-frame-api-password.hash')
+TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60
 
 GITHUB_REPO = 'TightwadTony/fancy-frame'
 GITHUB_LATEST_RELEASE_URL = f'https://api.github.com/repos/{GITHUB_REPO}/releases/latest'
 UPDATE_UNIT_PREFIX = 'fancy-frame-self-update'
 
-VALID_TRANSITIONS = {'crossfade', 'fade_to_black', 'wipe'}
+DEFAULT_TRANSITION_NAMES = ('crossfade', 'fade_to_black', 'wipe')
+PI45_TRANSITION_NAMES = ('slide', 'cover')
+VALID_TRANSITIONS = set(DEFAULT_TRANSITION_NAMES) | set(PI45_TRANSITION_NAMES)
 VALID_IMAGE_EXTS  = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tif', '.tiff'}
 
 CONFIG_DEFAULTS: dict[str, str] = {
     'frame_name':         'Fancy Frame',
     'slide_seconds':      '25',
     'fade_seconds':       '1.5',
-    'transitions':        'crossfade, fade_to_black, wipe',
+    'transitions':        ', '.join(DEFAULT_TRANSITION_NAMES),
     'ken_burns':          'yes',
     'ken_burns_zoom_min': '1.02',
     'ken_burns_zoom_max': '1.20',
 }
 
 THUMBNAIL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+API_TOKEN_STORE.parent.mkdir(parents=True, exist_ok=True)
+
+
+def _read_token_store() -> list[dict]:
+    try:
+        raw = json.loads(API_TOKEN_STORE.read_text())
+    except (OSError, json.JSONDecodeError):
+        return []
+
+    if not isinstance(raw, list):
+        return []
+
+    tokens: list[dict] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        token_hash = item.get('token_hash')
+        expires_at = item.get('expires_at')
+        if not isinstance(token_hash, str) or not token_hash:
+            continue
+        if not isinstance(expires_at, int):
+            continue
+        tokens.append({'token_hash': token_hash, 'expires_at': expires_at})
+    return tokens
+
+
+def _write_token_store(tokens: list[dict]) -> None:
+    tmp_path = API_TOKEN_STORE.with_name(f'.{API_TOKEN_STORE.name}.{os.getpid()}.tmp')
+    try:
+        tmp_path.write_text(json.dumps(tokens))
+        os.chmod(tmp_path, 0o600)
+        os.replace(tmp_path, API_TOKEN_STORE)
+    finally:
+        try:
+            if tmp_path.exists():
+                tmp_path.unlink()
+        except OSError:
+            pass
+
+
+def _prune_expired_tokens(tokens: list[dict], now: int | None = None) -> list[dict]:
+    current = int(time.time()) if now is None else now
+    return [entry for entry in tokens if int(entry.get('expires_at', 0)) > current]
+
+
+def _hash_token(raw_token: str) -> str:
+    return hashlib.sha256(raw_token.encode('utf-8')).hexdigest()
+
+
+def _hash_password(password: str, salt_hex: str | None = None) -> tuple[str, str]:
+    salt = bytes.fromhex(salt_hex) if salt_hex else secrets.token_bytes(16)
+    digest = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt, 260000)
+    return salt.hex(), digest.hex()
+
+
+def _read_password_hash_record() -> dict | None:
+    try:
+        raw = json.loads(API_PASSWORD_HASH_FILE.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+
+    if not isinstance(raw, dict):
+        return None
+
+    algo = raw.get('algo')
+    iterations = raw.get('iterations')
+    salt = raw.get('salt')
+    password_hash = raw.get('hash')
+    if algo != 'pbkdf2_sha256':
+        return None
+    if not isinstance(iterations, int) or iterations <= 0:
+        return None
+    if not isinstance(salt, str) or not salt:
+        return None
+    if not isinstance(password_hash, str) or not password_hash:
+        return None
+    return raw
+
+
+def _write_password_hash(password: str) -> None:
+    salt_hex, digest_hex = _hash_password(password)
+    payload = {
+        'algo': 'pbkdf2_sha256',
+        'iterations': 260000,
+        'salt': salt_hex,
+        'hash': digest_hex,
+    }
+
+    tmp_path = API_PASSWORD_HASH_FILE.with_name(f'.{API_PASSWORD_HASH_FILE.name}.{os.getpid()}.tmp')
+    try:
+        tmp_path.write_text(json.dumps(payload))
+        os.chmod(tmp_path, 0o600)
+        os.replace(tmp_path, API_PASSWORD_HASH_FILE)
+    finally:
+        try:
+            if tmp_path.exists():
+                tmp_path.unlink()
+        except OSError:
+            pass
+
+
+def _extract_bearer_token() -> str | None:
+    header = request.headers.get('Authorization', '').strip()
+    if not header:
+        return None
+    if not header.lower().startswith('bearer '):
+        return None
+    token = header[7:].strip()
+    return token or None
+
+
+def _is_valid_auth_token(raw_token: str) -> bool:
+    now = int(time.time())
+    token_hash = _hash_token(raw_token)
+    tokens = _read_token_store()
+    active = _prune_expired_tokens(tokens, now=now)
+    changed = len(active) != len(tokens)
+
+    valid = False
+    for entry in active:
+        if hmac.compare_digest(entry.get('token_hash', ''), token_hash):
+            valid = True
+            break
+
+    if changed:
+        _write_token_store(active)
+
+    return valid
+
+
+def _issue_auth_token() -> tuple[str, int]:
+    now = int(time.time())
+    expires_at = now + TOKEN_TTL_SECONDS
+    raw_token = secrets.token_urlsafe(32)
+
+    tokens = _prune_expired_tokens(_read_token_store(), now=now)
+    tokens.append({'token_hash': _hash_token(raw_token), 'expires_at': expires_at})
+    _write_token_store(tokens)
+    return raw_token, expires_at
+
+
+def _revoke_all_tokens() -> None:
+    _write_token_store([])
+
+
+def _verify_api_user_password(password: str) -> bool:
+    record = _read_password_hash_record()
+    if record is None:
+        logger.error('API password hash file is missing or invalid: %s', API_PASSWORD_HASH_FILE)
+        return False
+
+    salt = str(record['salt'])
+    expected = str(record['hash'])
+    _, calculated = _hash_password(password, salt)
+    return hmac.compare_digest(calculated, expected)
+
+
+def require_auth(fn):
+    @wraps(fn)
+    def _wrapped(*args, **kwargs):
+        token = _extract_bearer_token()
+        if not token or not _is_valid_auth_token(token):
+            return jsonify({'error': 'Unauthorized'}), 401
+        return fn(*args, **kwargs)
+
+    return _wrapped
 
 # ---------------------------------------------------------------------------
 # Config helpers
@@ -88,6 +265,20 @@ def _read_raw_config() -> dict[str, str]:
     except OSError:
         pass
     return result
+
+
+def _read_hw_profile() -> str:
+    try:
+        return HW_PROFILE_FILE.read_text().strip()
+    except OSError:
+        return ''
+
+
+def _default_transition_names(hw_profile: str | None = None) -> tuple[str, ...]:
+    profile = hw_profile if hw_profile is not None else _read_hw_profile()
+    if profile == 'pi45':
+        return PI45_TRANSITION_NAMES
+    return DEFAULT_TRANSITION_NAMES
 
 
 def _safe_config_float(raw: dict[str, str], key: str, *, minimum: float | None = None, maximum: float | None = None) -> float:
@@ -148,10 +339,13 @@ def _write_config(values: dict[str, str]) -> None:
 def _config_to_dict(raw: dict[str, str]) -> dict:
     """Convert raw string config into typed API response dict."""
     merged = {**CONFIG_DEFAULTS, **raw}
-    transitions = [t.strip() for t in merged['transitions'].split(',') if t.strip() in VALID_TRANSITIONS]
+    default_transition_names = _default_transition_names()
+    default_transition_value = ', '.join(default_transition_names)
+    transition_value = raw.get('transitions', default_transition_value)
+    transitions = [t.strip() for t in transition_value.split(',') if t.strip() in VALID_TRANSITIONS]
     if not transitions:
-        logger.warning('No valid transitions in config; falling back to defaults')
-        transitions = [t.strip() for t in CONFIG_DEFAULTS['transitions'].split(',') if t.strip()]
+        logger.warning('No valid transitions in config; falling back to hardware defaults')
+        transitions = list(default_transition_names)
 
     slide_seconds = _safe_config_float(merged, 'slide_seconds', minimum=1.0)
     fade_seconds = _safe_config_float(merged, 'fade_seconds', minimum=0.0, maximum=slide_seconds)
@@ -567,6 +761,7 @@ def get_info():
 
 
 @app.route('/api/config')
+@require_auth
 def get_config():
     """Return current slideshow configuration."""
     raw = _read_raw_config()
@@ -601,6 +796,7 @@ def get_update_check():
 
 
 @app.route('/api/update', methods=['POST'])
+@require_auth
 def install_latest_update():
     """Download and install the latest released version in a detached updater unit."""
     current_version, current_version_source = _get_local_release_version()
@@ -707,6 +903,7 @@ def get_update_status():
 
 
 @app.route('/api/config', methods=['PATCH'])
+@require_auth
 def patch_config():
     """
     Update one or more configuration values.
@@ -764,38 +961,66 @@ def get_photos():
 
 
 @app.route('/api/photos', methods=['POST'])
+@require_auth
 def upload_photo():
     """
-    Accept a multipart file upload (field name: 'photo') and save it to
-    /srv/photos/. Only image extensions are accepted. Returns 201 with the
-    saved filename on success.
+    Accept multipart photo uploads and save them to /srv/photos/.
+    Supported field names: 'photo', 'photos', and 'photos[]'.
+    Returns 201 with saved filenames on success, or a detailed error payload
+    when no files can be saved.
     """
-    if 'photo' not in request.files:
+    uploaded: list = []
+    for field in ('photo', 'photos', 'photos[]'):
+        uploaded.extend(request.files.getlist(field))
+
+    if not uploaded:
+        uploaded = list(request.files.values())
+
+    if not uploaded:
         return jsonify({'error': 'No photo field in request'}), 400
 
-    file = request.files['photo']
-    if not file.filename:
-        return jsonify({'error': 'Empty filename'}), 400
+    saved: list[str] = []
+    errors: list[dict[str, str]] = []
 
-    ext = Path(file.filename).suffix.lower()
-    if ext not in VALID_IMAGE_EXTS:
-        return jsonify({'error': f'Unsupported file type: {ext}'}), 422
+    for file in uploaded:
+        if not file.filename:
+            errors.append({'filename': '', 'error': 'Empty filename'})
+            continue
 
-    # Sanitize: strip any path components, replace spaces
-    base = secure_filename(file.filename)
-    if not base:
-        base = f'photo_{uuid.uuid4().hex}{ext}'
+        ext = Path(file.filename).suffix.lower()
+        if ext not in VALID_IMAGE_EXTS:
+            errors.append({'filename': file.filename, 'error': f'Unsupported file type: {ext}'})
+            continue
 
-    dest = PHOTOS_DIR / base
-    # Avoid collisions by appending a short unique suffix if needed
-    if dest.exists():
-        stem = Path(base).stem
-        dest = PHOTOS_DIR / f'{stem}_{uuid.uuid4().hex[:8]}{ext}'
+        # Sanitize: strip any path components, replace spaces
+        base = secure_filename(file.filename)
+        if not base:
+            base = f'photo_{uuid.uuid4().hex}{ext}'
 
-    file.save(dest)
-    os.chmod(dest, 0o666)
+        dest = PHOTOS_DIR / base
+        # Avoid collisions by appending a short unique suffix if needed
+        if dest.exists():
+            stem = Path(base).stem
+            dest = PHOTOS_DIR / f'{stem}_{uuid.uuid4().hex[:8]}{ext}'
 
-    return jsonify({'filename': dest.name}), 201
+        try:
+            file.save(dest)
+            os.chmod(dest, 0o666)
+            saved.append(dest.name)
+        except OSError as exc:
+            logger.exception('Failed saving uploaded photo %s', file.filename)
+            errors.append({'filename': file.filename, 'error': f'Failed to save file: {exc}'})
+
+    if not saved:
+        return jsonify({'error': 'No photos were uploaded', 'details': errors}), 422
+
+    if len(saved) == 1 and not errors:
+        return jsonify({'filename': saved[0]}), 201
+
+    payload = {'filenames': saved, 'uploaded_count': len(saved)}
+    if errors:
+        payload['errors'] = errors
+    return jsonify(payload), 201
 
 
 def _sanitize_photo_filename(filename: str) -> str | None:
@@ -898,6 +1123,7 @@ def _make_photo_url(filename: str, thumbnail: bool = False, version: str | None 
 
 
 @app.route('/api/photos/list')
+@require_auth
 def get_photo_list():
     """Return a list of photo filenames currently stored in the photos directory."""
     try:
@@ -920,6 +1146,7 @@ def get_photo_list():
 
 
 @app.route('/api/photos/<path:filename>')
+@require_auth
 def get_photo(filename: str):
     safe_name = _sanitize_photo_filename(filename)
     if not safe_name:
@@ -943,6 +1170,7 @@ def get_photo(filename: str):
 
 
 @app.route('/api/photos/<path:filename>', methods=['DELETE'])
+@require_auth
 def delete_photo(filename: str):
     safe_name = _sanitize_photo_filename(filename)
     if not safe_name:
@@ -961,6 +1189,7 @@ def delete_photo(filename: str):
 
 
 @app.route('/api/restart', methods=['POST'])
+@require_auth
 def restart():
     """Schedule a system reboot (runs after response is sent)."""
     # Fork off the reboot so the response can be delivered first
@@ -1130,6 +1359,7 @@ def get_samba():
 
 
 @app.route('/api/samba/password', methods=['POST'])
+@require_auth
 def change_samba_password():
     """
     Change the Samba share password.
@@ -1178,6 +1408,7 @@ def change_samba_password():
 
 
 @app.route('/api/samba', methods=['PATCH'])
+@require_auth
 def patch_samba():
     """
     Update Samba share guest-access setting.
@@ -1207,6 +1438,86 @@ def patch_samba():
         return jsonify({'error': 'Failed to update share configuration. Please try again.'}), 500
 
     return jsonify(_read_samba_settings())
+
+
+@app.route('/api/auth/token', methods=['POST'])
+def create_auth_token():
+    """
+    Exchange the fancy-frame-api account password for an API auth token.
+    Token lifetime is 30 days.
+    """
+    data = request.get_json(silent=True)
+    if not data or not isinstance(data, dict):
+        return jsonify({'error': 'Request body must be a JSON object'}), 400
+
+    password = data.get('password', '')
+    if not isinstance(password, str) or not password:
+        return jsonify({'error': 'password is required'}), 422
+
+    if not _verify_api_user_password(password):
+        return jsonify({'error': 'Invalid credentials'}), 401
+
+    token, expires_at = _issue_auth_token()
+    return jsonify({
+        'token': token,
+        'token_type': 'Bearer',
+        'expires_in': TOKEN_TTL_SECONDS,
+        'expires_at': expires_at,
+    })
+
+
+@app.route('/api/auth/password', methods=['POST'])
+@require_auth
+def change_api_auth_password():
+    """
+    Change the fancy-frame-api account password and revoke all existing tokens.
+
+    JSON body:
+      current_password (string)
+      new_password     (string)
+    """
+    data = request.get_json(silent=True)
+    if not data or not isinstance(data, dict):
+        return jsonify({'error': 'Request body must be a JSON object'}), 400
+
+    current_password = data.get('current_password', '')
+    new_password = data.get('new_password', '')
+
+    if not isinstance(current_password, str) or not current_password:
+        return jsonify({'error': 'current_password is required'}), 422
+    if not isinstance(new_password, str) or not new_password:
+        return jsonify({'error': 'new_password is required'}), 422
+    if len(new_password) < 8:
+        return jsonify({'error': 'new_password must be at least 8 characters'}), 422
+
+    if not _verify_api_user_password(current_password):
+        return jsonify({'error': 'Current password is incorrect'}), 401
+
+    try:
+        result = subprocess.run(
+            ['chpasswd'],
+            input=f'{API_AUTH_USER}:{new_password}\n',
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except (FileNotFoundError, subprocess.SubprocessError):
+        logger.exception('Failed invoking chpasswd for API auth user')
+        return jsonify({'error': 'Failed to change password'}), 500
+
+    if result.returncode != 0:
+        logger.error('chpasswd failed for %s: %s', API_AUTH_USER, result.stderr.strip())
+        return jsonify({'error': 'Failed to change password'}), 500
+
+    try:
+        _write_password_hash(new_password)
+    except OSError:
+        logger.exception('Failed writing API password hash file')
+        return jsonify({'error': 'Failed to persist password change'}), 500
+
+    _revoke_all_tokens()
+    return jsonify({'status': 'ok', 'tokens_revoked': True})
 
 
 # ---------------------------------------------------------------------------

@@ -10,6 +10,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 INSTALL_ROOT="/opt/fancy-frame"
 LEGACY_INSTALL_ROOT="/opt/photo-frame"
+API_AUTH_USER="fancy-frame-api"
+API_AUTH_DEFAULT_PASSWORD="${FANCY_FRAME_API_DEFAULT_PASSWORD:-12345678}"
+API_AUTH_HASH_FILE="/etc/fancy-frame-api-password.hash"
 
 detect_target_user() {
   if [[ -n "${FANCY_FRAME_USER:-}" ]] && id -u "${FANCY_FRAME_USER}" >/dev/null 2>&1; then
@@ -120,6 +123,53 @@ normalize_frame_name() {
     name="$(printf '%s' "${name}" | sed -E 's/[[:space:]]+$//')"
   fi
   printf '%s' "${name}"
+}
+
+ensure_api_auth_user() {
+  local created="no"
+
+  if ! id -u "${API_AUTH_USER}" >/dev/null 2>&1; then
+    useradd --create-home --shell /usr/sbin/nologin "${API_AUTH_USER}"
+    created="yes"
+  fi
+
+  if [[ "${created}" == "yes" ]]; then
+    if [[ ${#API_AUTH_DEFAULT_PASSWORD} -lt 8 ]]; then
+      echo "FANCY_FRAME_API_DEFAULT_PASSWORD must be at least 8 characters."
+      exit 1
+    fi
+    printf '%s:%s\n' "${API_AUTH_USER}" "${API_AUTH_DEFAULT_PASSWORD}" | chpasswd
+    echo "Created ${API_AUTH_USER} user with installer-provided default password."
+  else
+    echo "User ${API_AUTH_USER} already exists; keeping existing password."
+  fi
+
+  if [[ ! -f "${API_AUTH_HASH_FILE}" ]]; then
+    python3 - "${API_AUTH_DEFAULT_PASSWORD}" "${API_AUTH_HASH_FILE}" <<'PY'
+import hashlib
+import json
+import os
+import secrets
+import sys
+
+password = sys.argv[1]
+dest = sys.argv[2]
+salt = secrets.token_bytes(16)
+digest = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt, 260000)
+payload = {
+    'algo': 'pbkdf2_sha256',
+    'iterations': 260000,
+    'salt': salt.hex(),
+    'hash': digest.hex(),
+}
+tmp = f"{dest}.{os.getpid()}.tmp"
+with open(tmp, 'w', encoding='utf-8') as f:
+    json.dump(payload, f)
+os.chmod(tmp, 0o600)
+os.replace(tmp, dest)
+PY
+    echo "Initialized ${API_AUTH_HASH_FILE}."
+  fi
 }
 
 upsert_conf_key() {
@@ -374,6 +424,8 @@ apt install -y \
   python3-flask \
   iw \
   rfkill
+
+ensure_api_auth_user
 
 echo "Preparing directories..."
 mkdir -p /srv/photos
