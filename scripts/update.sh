@@ -43,8 +43,8 @@ ensure_api_auth_user() {
   fi
 
   if [[ "${created}" == "yes" ]]; then
-    if [[ ${#API_AUTH_DEFAULT_PASSWORD} -lt 8 ]]; then
-      echo "FANCY_FRAME_API_DEFAULT_PASSWORD must be at least 8 characters."
+    if [[ ${#API_AUTH_DEFAULT_PASSWORD} -lt 4 ]]; then
+      echo "FANCY_FRAME_API_DEFAULT_PASSWORD must be at least 4 characters."
       exit 1
     fi
     printf '%s:%s\n' "${API_AUTH_USER}" "${API_AUTH_DEFAULT_PASSWORD}" | chpasswd

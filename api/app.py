@@ -1487,12 +1487,13 @@ def change_api_auth_password():
         return jsonify({'error': 'current_password is required'}), 422
     if not isinstance(new_password, str) or not new_password:
         return jsonify({'error': 'new_password is required'}), 422
-    if len(new_password) < 8:
-        return jsonify({'error': 'new_password must be at least 8 characters'}), 422
+    if len(new_password) < 4:
+        return jsonify({'error': 'new_password must be at least 4 characters'}), 422
 
     if not _verify_api_user_password(current_password):
         return jsonify({'error': 'Current password is incorrect'}), 401
 
+    system_password_synced = True
     try:
         result = subprocess.run(
             ['chpasswd'],
@@ -1502,13 +1503,12 @@ def change_api_auth_password():
             timeout=10,
             check=False,
         )
+        if result.returncode != 0:
+            system_password_synced = False
+            logger.warning('chpasswd failed for %s: %s', API_AUTH_USER, result.stderr.strip())
     except (FileNotFoundError, subprocess.SubprocessError):
+        system_password_synced = False
         logger.exception('Failed invoking chpasswd for API auth user')
-        return jsonify({'error': 'Failed to change password'}), 500
-
-    if result.returncode != 0:
-        logger.error('chpasswd failed for %s: %s', API_AUTH_USER, result.stderr.strip())
-        return jsonify({'error': 'Failed to change password'}), 500
 
     try:
         _write_password_hash(new_password)
@@ -1517,7 +1517,11 @@ def change_api_auth_password():
         return jsonify({'error': 'Failed to persist password change'}), 500
 
     _revoke_all_tokens()
-    return jsonify({'status': 'ok', 'tokens_revoked': True})
+    return jsonify({
+        'status': 'ok',
+        'tokens_revoked': True,
+        'system_password_synced': system_password_synced,
+    })
 
 
 # ---------------------------------------------------------------------------
