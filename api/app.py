@@ -1418,15 +1418,36 @@ def _verify_samba_password(username: str, password: str) -> bool:
 
 def _change_samba_password(username: str, new_password: str) -> None:
     """Change the Samba password for username (must be run as root)."""
-    proc = subprocess.run(
-        ['smbpasswd', '-s', username],
-        input=f'{new_password}\n{new_password}\n',
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
-    if proc.returncode != 0:
-        raise RuntimeError(f'smbpasswd failed: {proc.stderr.strip()}')
+    def _run_smbpasswd(args: list[str]) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            ['smbpasswd', *args, username],
+            input=f'{new_password}\n{new_password}\n',
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+
+    # First try to update an existing Samba passdb entry.
+    proc = _run_smbpasswd(['-s'])
+    if proc.returncode == 0:
+        return
+
+    stderr = (proc.stderr or '').strip()
+    stdout = (proc.stdout or '').strip()
+    detail = stderr or stdout or 'unknown error'
+
+    # If the user does not yet exist in passdb, create it and set password.
+    lowered = detail.lower()
+    if 'does not exist' in lowered or 'failed to find entry' in lowered:
+        add_proc = _run_smbpasswd(['-a', '-s'])
+        if add_proc.returncode == 0:
+            return
+        add_stderr = (add_proc.stderr or '').strip()
+        add_stdout = (add_proc.stdout or '').strip()
+        add_detail = add_stderr or add_stdout or 'unknown error'
+        raise RuntimeError(f'smbpasswd add failed: {add_detail}')
+
+    raise RuntimeError(f'smbpasswd failed: {detail}')
 
 
 # ---------------------------------------------------------------------------
