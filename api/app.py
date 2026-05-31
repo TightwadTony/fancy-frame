@@ -768,6 +768,7 @@ def _validate_patch(data: dict) -> list[str]:
 def get_info():
     """Return basic device information."""
     hostname = socket.gethostname()
+    config = _config_to_dict(_read_raw_config())
 
     # Read uptime from /proc/uptime (seconds since boot)
     try:
@@ -788,10 +789,30 @@ def get_info():
     except Exception:
         pass
 
+    cover_photo_url = None
+    cover_photo_version = None
+    try:
+        for f in sorted(PHOTOS_DIR.iterdir(), key=lambda path: path.name):
+            if not f.is_file() or f.suffix.lower() not in VALID_IMAGE_EXTS:
+                continue
+            if f.name.startswith('.') or f.name.startswith('._'):
+                continue
+            stat = f.stat()
+            cover_photo_version = f"{stat.st_mtime_ns}-{stat.st_size}"
+            root = request.url_root.rstrip('/')
+            encoded_version = quote(cover_photo_version, safe='')
+            cover_photo_url = f"{root}/api/cover?thumbnail=1&version={encoded_version}"
+            break
+    except OSError:
+        pass
+
     return jsonify({
         'hostname':    hostname,
         'ip_address':  ip_address,
         'uptime_secs': uptime_secs,
+        'frame_name': config.get('frame_name', CONFIG_DEFAULTS['frame_name']),
+        'cover_photo_url': cover_photo_url,
+        'cover_photo_version': cover_photo_version,
     })
 
 
@@ -1157,6 +1178,31 @@ def _make_photo_url(filename: str, thumbnail: bool = False, version: str | None 
     return url
 
 
+def _first_photo_with_version() -> tuple[Path | None, str | None]:
+    try:
+        for f in sorted(PHOTOS_DIR.iterdir(), key=lambda path: path.name):
+            if not f.is_file() or f.suffix.lower() not in VALID_IMAGE_EXTS:
+                continue
+            if f.name.startswith('.') or f.name.startswith('._'):
+                continue
+            stat = f.stat()
+            return f, f"{stat.st_mtime_ns}-{stat.st_size}"
+    except OSError:
+        pass
+    return None, None
+
+
+@app.route('/api/cover')
+def get_cover_photo():
+    """Return the first available frame photo (thumbnail by default) without authentication."""
+    photo_path, _ = _first_photo_with_version()
+    if photo_path is None:
+        return jsonify({'error': 'Not found'}), 404
+
+    thumbnail = request.args.get('thumbnail', '1').lower() in ('', '1', 'true', 'yes')
+    return _serve_photo(photo_path, thumbnail=thumbnail)
+
+
 @app.route('/api/photos/list')
 @require_auth
 def get_photo_list():
@@ -1399,19 +1445,18 @@ def change_samba_password():
     """
     Change the Samba share password.
 
-    Requires a JSON body with:
-      current_password (string) — the existing password to verify
-      new_password     (string) — the desired new password
+        Requires a JSON body with:
+            new_password (string) — the desired new password
+
+        NOTE: API-token authentication is considered sufficient authorization,
+        so the current Samba password is not required for this operation.
     """
     data = request.get_json(silent=True)
     if not data or not isinstance(data, dict):
         return jsonify({'error': 'Request body must be a JSON object'}), 400
 
-    current_password = data.get('current_password', '')
     new_password     = data.get('new_password', '')
 
-    if not isinstance(current_password, str) or not current_password:
-        return jsonify({'error': 'current_password is required'}), 422
     if not isinstance(new_password, str) or not new_password:
         return jsonify({'error': 'new_password is required'}), 422
     if len(new_password) < 6:
@@ -1424,14 +1469,6 @@ def change_samba_password():
     username = settings.get('username')
     if not username:
         return jsonify({'error': 'Could not determine Samba username from configuration'}), 500
-
-    try:
-        verified = _verify_samba_password(username, current_password)
-    except SambaVerificationError:
-        logger.exception('Could not verify Samba password for user %s', username)
-        return jsonify({'error': 'Could not verify the current password. Please try again later.'}), 503
-    if not verified:
-        return jsonify({'error': 'Current password is incorrect'}), 401
 
     try:
         _change_samba_password(username, new_password)
