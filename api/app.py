@@ -429,7 +429,7 @@ def _compare_release_versions(current_version: str | None, latest_version: str |
     return 'current'
 
 
-def _github_api_headers() -> dict[str, str]:
+def _github_api_headers(include_auth: bool = True) -> dict[str, str]:
     headers = {
         'Accept': 'application/vnd.github+json',
         'User-Agent': 'fancy-frame-api',
@@ -437,7 +437,7 @@ def _github_api_headers() -> dict[str, str]:
     }
 
     token = os.environ.get('RELEASESPAT', '').strip()
-    if token:
+    if include_auth and token:
         headers['Authorization'] = f'Bearer {token}'
 
     return headers
@@ -480,15 +480,34 @@ def _extract_release_info(payload: dict) -> dict:
 
 
 def _fetch_latest_release() -> dict:
-    request = Request(
-        GITHUB_LATEST_RELEASE_URL,
-        headers=_github_api_headers(),
-    )
+    token = os.environ.get('RELEASESPAT', '').strip()
+
+    def _open_release_request(include_auth: bool):
+        request = Request(
+            GITHUB_LATEST_RELEASE_URL,
+            headers=_github_api_headers(include_auth=include_auth),
+        )
+        with urlopen(request, timeout=5) as response:
+            return json.load(response)
 
     try:
-        with urlopen(request, timeout=5) as response:
-            payload = json.load(response)
+        payload = _open_release_request(include_auth=True)
     except HTTPError as exc:
+        if token and exc.code in (401, 403):
+            logger.warning('GitHub API token was rejected (HTTP %s); retrying without auth', exc.code)
+            try:
+                payload = _open_release_request(include_auth=False)
+            except HTTPError as fallback_exc:
+                detail = fallback_exc.read().decode('utf-8', errors='replace').strip()
+                raise RuntimeError(f'GitHub API returned HTTP {fallback_exc.code}: {detail or fallback_exc.reason}') from fallback_exc
+            except URLError as fallback_exc:
+                raise RuntimeError(f'Could not reach GitHub API: {fallback_exc.reason}') from fallback_exc
+            except TimeoutError as fallback_exc:
+                raise RuntimeError('Timed out while contacting GitHub API') from fallback_exc
+            except json.JSONDecodeError as fallback_exc:
+                raise RuntimeError('GitHub API returned invalid JSON') from fallback_exc
+            return _extract_release_info(payload)
+
         detail = exc.read().decode('utf-8', errors='replace').strip()
         raise RuntimeError(f'GitHub API returned HTTP {exc.code}: {detail or exc.reason}') from exc
     except URLError as exc:
@@ -630,20 +649,36 @@ def _build_install_latest_script(release: dict, asset: dict) -> str:
         python3 - {shlex.quote(asset_api_url)} "$archive" "${{RELEASESPAT:-}}" <<'PY'
 import shutil
 import sys
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 asset_url, archive_path, token = sys.argv[1], sys.argv[2], sys.argv[3].strip()
-headers = {{
+base_headers = {{
     'Accept': 'application/octet-stream',
     'User-Agent': 'fancy-frame-updater',
     'X-GitHub-Api-Version': '2022-11-28',
 }}
-if token:
-    headers['Authorization'] = 'token ' + token
 
-request = Request(asset_url, headers=headers)
-with urlopen(request, timeout=120) as response, open(archive_path, 'wb') as archive_file:
-    shutil.copyfileobj(response, archive_file)
+
+def build_headers(include_auth: bool):
+    headers = dict(base_headers)
+    if include_auth and token:
+        headers['Authorization'] = 'token ' + token
+    return headers
+
+
+def download(include_auth: bool):
+    request = Request(asset_url, headers=build_headers(include_auth))
+    with urlopen(request, timeout=120) as response, open(archive_path, 'wb') as archive_file:
+        shutil.copyfileobj(response, archive_file)
+
+try:
+    download(include_auth=True)
+except HTTPError as exc:
+    if token and exc.code in (401, 403):
+        download(include_auth=False)
+    else:
+        raise
 PY
 
         tar xzf "$archive" -C "$work_dir"
