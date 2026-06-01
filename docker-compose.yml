@@ -1,13 +1,19 @@
 services:
-  test-frames:
+  fancy-frame:
     build:
       context: .
       dockerfile: Dockerfile.test-stub
     container_name: fancy-frame-test-stub
-    command: ["--frames", "${TEST_STUB_FRAMES:-3}", "--bind-host", "0.0.0.0"]
     ports:
-      - "9000-9099:9000-9099"
+      - "8080:8080"
     environment:
-      # Optional: force the advertised IP used in mDNS + /api/info (recommended on macOS Docker Desktop)
-      - TEST_STUB_ADVERTISED_IP=${TEST_STUB_ADVERTISED_IP:-}
+      # Preferred: run scripts/run_test_stub.sh to auto-detect host LAN IP and set this.
+      # On macOS Docker Desktop, container networking is VM-backed (e.g. 192.168.65.x),
+      # so explicit advertised host IP is required for discovery from other devices.
+      - FANCY_FRAME_ADVERTISED_IP=${FANCY_FRAME_ADVERTISED_IP:-}
+      - FANCY_FRAME_MDNS_INSTANCE=${FANCY_FRAME_MDNS_INSTANCE:-Fancy Frame}
+      - FANCY_FRAME_MDNS_HOST=${FANCY_FRAME_MDNS_HOST:-fancy-frame-teststub}
+      - FANCY_FRAME_DISABLE_MDNS=${FANCY_FRAME_DISABLE_MDNS:-0}
+      # Default API password for /api/login in this containerized test mode.
+      - FANCY_FRAME_API_PASSWORD=${FANCY_FRAME_API_PASSWORD:-1234}
     restart: unless-stopped

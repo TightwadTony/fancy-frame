@@ -54,6 +54,8 @@ UPDATE_LOCK_FILE = Path('/var/lib/fancy-frame/update.lock')
 UPDATE_LOG_FILE = Path('/var/log/fancy-frame-update.log')
 SMB_CONF       = Path('/etc/samba/smb.conf')
 SMB_SHARE_NAME = 'photos'
+SAMBA_STUB_STATE_FILE = Path('/var/lib/fancy-frame/samba-stub.json')
+COVER_SELECTION_FILE = Path('/var/lib/fancy-frame/cover-photo.json')
 THUMBNAIL_LOCK = threading.Semaphore(1)
 API_AUTH_USER = 'fancy-frame-api'
 API_TOKEN_STORE = Path('/var/lib/fancy-frame/api-auth-tokens.json')
@@ -776,35 +778,29 @@ def get_info():
     except (OSError, ValueError):
         uptime_secs = 0.0
 
+    # Allow explicit override in container/test environments.
+    ip_address = os.environ.get('FANCY_FRAME_ADVERTISED_IP', '').strip() or None
+
     # Best-effort local IP on wlan0
-    ip_address = None
-    try:
-        result = subprocess.run(
-            ['ip', '-4', 'addr', 'show', 'wlan0'],
-            capture_output=True, text=True, timeout=3
-        )
-        match = re.search(r'inet (\d+\.\d+\.\d+\.\d+)', result.stdout)
-        if match:
-            ip_address = match.group(1)
-    except Exception:
-        pass
+    if ip_address is None:
+        try:
+            result = subprocess.run(
+                ['ip', '-4', 'addr', 'show', 'wlan0'],
+                capture_output=True, text=True, timeout=3
+            )
+            match = re.search(r'inet (\d+\.\d+\.\d+\.\d+)', result.stdout)
+            if match:
+                ip_address = match.group(1)
+        except Exception:
+            pass
 
     cover_photo_url = None
     cover_photo_version = None
-    try:
-        for f in sorted(PHOTOS_DIR.iterdir(), key=lambda path: path.name):
-            if not f.is_file() or f.suffix.lower() not in VALID_IMAGE_EXTS:
-                continue
-            if f.name.startswith('.') or f.name.startswith('._'):
-                continue
-            stat = f.stat()
-            cover_photo_version = f"{stat.st_mtime_ns}-{stat.st_size}"
-            root = request.url_root.rstrip('/')
-            encoded_version = quote(cover_photo_version, safe='')
-            cover_photo_url = f"{root}/api/cover?thumbnail=1&version={encoded_version}"
-            break
-    except OSError:
-        pass
+    _, cover_photo_version = _first_photo_with_version()
+    if cover_photo_version:
+        root = request.url_root.rstrip('/')
+        encoded_version = quote(cover_photo_version, safe='')
+        cover_photo_url = f"{root}/api/cover?thumbnail=1&version={encoded_version}"
 
     return jsonify({
         'hostname':    hostname,
@@ -1178,7 +1174,55 @@ def _make_photo_url(filename: str, thumbnail: bool = False, version: str | None 
     return url
 
 
+def _read_cover_selection() -> str | None:
+    try:
+        payload = json.loads(COVER_SELECTION_FILE.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+
+    if not isinstance(payload, dict):
+        return None
+
+    filename = payload.get('filename')
+    if not isinstance(filename, str):
+        return None
+
+    return _sanitize_photo_filename(filename)
+
+
+def _write_cover_selection(filename: str | None) -> None:
+    if not filename:
+        try:
+            COVER_SELECTION_FILE.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return
+
+    COVER_SELECTION_FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = COVER_SELECTION_FILE.with_name(f'.{COVER_SELECTION_FILE.name}.{os.getpid()}.tmp')
+    try:
+        tmp_path.write_text(json.dumps({'filename': filename}))
+        os.chmod(tmp_path, 0o600)
+        os.replace(tmp_path, COVER_SELECTION_FILE)
+    finally:
+        try:
+            if tmp_path.exists():
+                tmp_path.unlink()
+        except OSError:
+            pass
+
+
 def _first_photo_with_version() -> tuple[Path | None, str | None]:
+    selected_filename = _read_cover_selection()
+    if selected_filename:
+        selected_path = PHOTOS_DIR / selected_filename
+        try:
+            if selected_path.exists() and selected_path.is_file() and selected_path.suffix.lower() in VALID_IMAGE_EXTS:
+                stat = selected_path.stat()
+                return selected_path, f"{stat.st_mtime_ns}-{stat.st_size}"
+        except OSError:
+            pass
+
     try:
         for f in sorted(PHOTOS_DIR.iterdir(), key=lambda path: path.name):
             if not f.is_file() or f.suffix.lower() not in VALID_IMAGE_EXTS:
@@ -1266,7 +1310,42 @@ def delete_photo(filename: str):
     except OSError:
         return jsonify({'error': 'Could not delete file'}), 500
 
+    selected_cover = _read_cover_selection()
+    if selected_cover == safe_name:
+        _write_cover_selection(None)
+
     return jsonify({'status': 'deleted'}), 200
+
+
+@app.route('/api/photos/cover', methods=['POST'])
+@require_auth
+def set_cover_photo():
+    """Set the preferred cover photo used by /api/cover and /api/info summary data."""
+    data = request.get_json(silent=True)
+    if not data or not isinstance(data, dict):
+        return jsonify({'error': 'Request body must be a JSON object'}), 400
+
+    filename = data.get('filename', '')
+    if not isinstance(filename, str) or not filename:
+        return jsonify({'error': 'filename is required'}), 422
+
+    safe_name = _sanitize_photo_filename(filename)
+    if not safe_name:
+        return jsonify({'error': 'Invalid filename'}), 422
+
+    photo_path = PHOTOS_DIR / safe_name
+    if not photo_path.exists() or not photo_path.is_file():
+        return jsonify({'error': 'Not found'}), 404
+
+    try:
+        _write_cover_selection(safe_name)
+    except OSError:
+        logger.exception('Failed to persist selected cover photo')
+        return jsonify({'error': 'Failed to persist cover photo selection'}), 500
+
+    stat = photo_path.stat()
+    version = f"{stat.st_mtime_ns}-{stat.st_size}"
+    return jsonify({'status': 'ok', 'filename': safe_name, 'version': version})
 
 
 @app.route('/api/restart', methods=['POST'])
@@ -1285,6 +1364,27 @@ def restart():
 def _read_samba_settings() -> dict:
     """Parse /etc/samba/smb.conf to get Fancy Frame share settings."""
     result: dict = {'guest_access': False, 'username': None}
+
+    configured_username = os.environ.get('FANCY_FRAME_SAMBA_USERNAME', '').strip() or None
+    is_stub_mode = os.environ.get('FANCY_FRAME_STUB_MODE', '').strip().lower() in ('1', 'true', 'yes', 'on')
+
+    if is_stub_mode and not SMB_CONF.exists():
+        try:
+            state = json.loads(SAMBA_STUB_STATE_FILE.read_text())
+            if isinstance(state, dict):
+                guest_access = state.get('guest_access')
+                username = state.get('username')
+                if isinstance(guest_access, bool):
+                    result['guest_access'] = guest_access
+                if isinstance(username, str) and username.strip():
+                    result['username'] = username.strip()
+        except (OSError, json.JSONDecodeError):
+            pass
+
+        if not result.get('username'):
+            result['username'] = configured_username or 'photo'
+        return result
+
     try:
         in_share = False
         valid_users: str | None = None
@@ -1312,6 +1412,10 @@ def _read_samba_settings() -> dict:
         result['username'] = valid_users or force_user
     except OSError:
         pass
+
+    if not result.get('username'):
+        result['username'] = configured_username
+
     return result
 
 
@@ -1419,13 +1523,16 @@ def _verify_samba_password(username: str, password: str) -> bool:
 def _change_samba_password(username: str, new_password: str) -> None:
     """Change the Samba password for username (must be run as root)."""
     def _run_smbpasswd(args: list[str]) -> subprocess.CompletedProcess:
-        return subprocess.run(
-            ['smbpasswd', *args, username],
-            input=f'{new_password}\n{new_password}\n',
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
+        try:
+            return subprocess.run(
+                ['smbpasswd', *args, username],
+                input=f'{new_password}\n{new_password}\n',
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+        except FileNotFoundError as exc:
+            raise RuntimeError('smbpasswd is not installed') from exc
 
     # First try to update an existing Samba passdb entry.
     proc = _run_smbpasswd(['-s'])
@@ -1491,9 +1598,14 @@ def change_samba_password():
     if not username:
         return jsonify({'error': 'Could not determine Samba username from configuration'}), 500
 
+    is_stub_mode = os.environ.get('FANCY_FRAME_STUB_MODE', '').strip().lower() in ('1', 'true', 'yes', 'on')
+
     try:
         _change_samba_password(username, new_password)
-    except RuntimeError:
+    except RuntimeError as exc:
+        if is_stub_mode:
+            logger.warning('Stub Samba mode active; treating password change as success: %s', exc)
+            return jsonify({'status': 'ok'})
         logger.exception('smbpasswd failed for user %s', username)
         return jsonify({'error': 'Failed to change password. Please try again.'}), 500
 
@@ -1522,6 +1634,19 @@ def patch_samba():
     username = settings.get('username')
     if not username:
         return jsonify({'error': 'Could not determine Samba username from configuration'}), 500
+
+    is_stub_mode = os.environ.get('FANCY_FRAME_STUB_MODE', '').strip().lower() in ('1', 'true', 'yes', 'on')
+    if is_stub_mode and not SMB_CONF.exists():
+        state = {
+            'guest_access': data['guest_access'],
+            'username': username,
+        }
+        try:
+            SAMBA_STUB_STATE_FILE.write_text(json.dumps(state))
+        except OSError:
+            logger.exception('Failed to update Samba stub state')
+            return jsonify({'error': 'Failed to update share configuration. Please try again.'}), 500
+        return jsonify(state)
 
     try:
         _write_samba_share(data['guest_access'], username)

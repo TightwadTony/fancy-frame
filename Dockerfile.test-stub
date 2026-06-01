@@ -2,19 +2,33 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+ARG FANCY_FRAME_ADVERTISED_IP=""
+ENV FANCY_FRAME_ADVERTISED_IP=${FANCY_FRAME_ADVERTISED_IP}
+
+# The API's /api/info route uses `ip` when available.
+RUN apt-get update \
+	&& apt-get install -y --no-install-recommends iproute2 \
+	&& rm -rf /var/lib/apt/lists/*
+
 # Update pip, setuptools, wheel
 RUN pip install --upgrade pip setuptools wheel
 
-# Install test-stub dependencies
+# Install API/container dependencies
 COPY requirements-test-stub.txt .
 RUN pip install -r requirements-test-stub.txt
 
-# Copy test stub script
-COPY scripts/test_stub.py .
+# Copy API + startup launcher
+COPY api ./api
+COPY VERSION ./VERSION
+COPY scripts/container_api_runner.py ./scripts/container_api_runner.py
+
+# Prepare runtime paths expected by the API.
+RUN mkdir -p /srv/photos /var/lib/fancy-frame/thumb-cache /var/log
 
 # Verify installation
-RUN python3 -c "import zeroconf; print(f'zeroconf {zeroconf.__version__} OK')"
+RUN python3 -c "import flask, zeroconf; print(f'flask {flask.__version__}, zeroconf {zeroconf.__version__} OK')"
 
-# Default to 3 frames; override with --frames when running
-ENTRYPOINT ["python3", "test_stub.py"]
-CMD ["--frames", "3"]
+EXPOSE 8080
+
+# Run the real API and advertise _fancyframe._tcp on the LAN.
+ENTRYPOINT ["python3", "scripts/container_api_runner.py"]
