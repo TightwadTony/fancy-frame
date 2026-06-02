@@ -36,7 +36,8 @@ jobs:
           ARTIFACT_NAME="fancy-frame-${VERSION}"
 
           mkdir -p "${ARTIFACT_NAME}"
-          cp -a api config portal scripts systemd "${ARTIFACT_NAME}/"
+          cp -a api config portal scripts systemd pi-gen "${ARTIFACT_NAME}/"
+          cp -a README.md SETUP.md "${ARTIFACT_NAME}/"
           printf '%s\n' "${VERSION}" > "${ARTIFACT_NAME}/VERSION"
 
           tar czf "${ARTIFACT_NAME}.tar.gz" "${ARTIFACT_NAME}"
@@ -65,3 +66,14 @@ jobs:
             ```
 
             This command downloads, extracts, and runs the update script for this release.
+
+            ## Build a flashable SD image from the release artifact
+
+            ```bash
+            VERSION=${{ steps.version.outputs.version }}
+            curl -L "https://github.com/TightwadTony/fancy-frame/releases/download/${VERSION}/fancy-frame-${VERSION}.tar.gz" | tar xz
+            cd "fancy-frame-${VERSION}"
+            bash pi-gen/build-image.sh
+            ```
+
+            The release artifact includes the `pi-gen/` tooling and supporting project files required to build a Raspberry Pi Imager-compatible `.img.xz` image.
