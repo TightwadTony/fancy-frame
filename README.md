@@ -25,67 +25,36 @@ A self-contained digital photo frame system for Raspberry Pi Zero with a full-sc
 
 ## Quick Start
 
-### 1. Flash Raspberry Pi OS
+### 1. Build or download a Fancy Frame image
 
-Use **Raspberry Pi Imager** with these advanced settings:
+Use one of these methods:
 
-- **OS**: Raspberry Pi OS Lite (Bookworm recommended)
-- **Hostname**: fancy-frame (or your preferred name)
-- **Enable SSH**: ✓
-- **Set locale/timezone**: Choose your region
-- **Configure Wi-Fi**: Optional; if skipped, onboarding mode will activate
-- **Wi-Fi country**: Set to your country code
+- Build your own image with the included pi-gen tooling (see [Build a Preinstalled SD Image](#build-a-preinstalled-sd-image-pi-gen-macos--docker)).
+- Download a prebuilt `fancy-frame-*.img.xz` release artifact.
 
-### 2. Download the latest release and copy to Pi
+### 2. Flash the image to microSD with Raspberry Pi Imager
 
-Go to the [Releases page](../../releases/latest) to find the current version tag (e.g. `v1.2.0`), then download and extract directly on the Pi:
+- Open Raspberry Pi Imager.
+- Choose **Use custom** and select the Fancy Frame `.img.xz` file.
+- Select your microSD card and write.
 
-```bash
-ssh photo@fancy-frame
+Optional advanced settings in Imager (recommended):
 
-# Replace v1.2.0 with the actual version tag shown on the Releases page
-VERSION=v1.2.0
-curl -L "https://github.com/TightwadTony/fancy-frame/releases/download/${VERSION}/fancy-frame-${VERSION}.tar.gz" \
-  | tar xz
-cd "fancy-frame-${VERSION}"
-```
+- Set hostname (for example `fancy-frame`)
+- Enable SSH
+- Set locale/timezone and Wi-Fi country
+- Optionally preconfigure Wi-Fi
 
-Or use the GitHub CLI to download the latest release automatically:
+### 3. Boot the frame
 
-```bash
-ssh photo@fancy-frame
-gh release download --repo TightwadTony/fancy-frame --pattern 'fancy-frame-*.tar.gz'
-tar xzf fancy-frame-*.tar.gz
-cd fancy-frame-*/
-```
+Insert the flashed SD card and power on the Raspberry Pi.
 
-### 3. Run installer
-
-```bash
-sudo bash scripts/install_initial_setup.sh
-# The installer auto-detects your user and configures everything
-# The installer also prompts for a Fancy Frame display name (saved as frame_name in config)
-```
-
-### 4. Set SMB password
-
-```bash
-# Replace 'photo' with your actual username
-sudo smbpasswd -a photo
-```
-
-Choose a password for the file share.
-
-### 5. Reboot
-
-```bash
-sudo reboot
-```
-
-After reboot:
+After boot:
 
 - If Wi-Fi is configured and reachable: slideshow starts
 - If Wi-Fi is not connected within ~60 seconds after boot: onboarding AP activates
+
+No manual file copy or on-device installer execution is required with the image-based workflow.
 
 ## Local Test Stub (iOS QA)
 
