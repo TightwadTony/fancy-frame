@@ -12,7 +12,7 @@ A self-contained digital photo frame system for Raspberry Pi Zero with a full-sc
 - **Automatic Wi-Fi onboarding portal** when the device cannot connect to a known network
 - **Automatic reconnection** with saved Wi-Fi credentials
 - **Boot-time AP fallback only** (onboarding AP starts only if Wi-Fi is not connected within 60 seconds after boot)
-- **Local multi-frame test stub** via Docker or Python for iOS QA and discovery testing
+- **Local test stub** via Docker for iOS QA and discovery testing
 - **Systemd services** for reliable boot and auto-restart
 
 ## Hardware Requirements
@@ -86,6 +86,57 @@ After reboot:
 
 - If Wi-Fi is configured and reachable: slideshow starts
 - If Wi-Fi is not connected within ~60 seconds after boot: onboarding AP activates
+
+## Local Test Stub (iOS QA)
+
+Use the test stub to run the Fancy Frame API locally without Raspberry Pi hardware.
+
+### What it provides
+
+- Real Flask API runtime in a container on port 8080
+- mDNS advertisement for iOS discovery (container advertises `_fancyframe._tcp`; on macOS, `run_test_stub.sh` also advertises `_photoframe._tcp` from the host)
+- Test-mode defaults for Samba and API auth behavior
+- Fast local loop for iOS UI and API validation
+
+### Docker test stub (recommended)
+
+From `fancy-frame/`:
+
+```bash
+./scripts/run_test_stub.sh
+```
+
+What this helper does:
+
+- Detects your host LAN IPv4 address automatically
+- Exports `FANCY_FRAME_ADVERTISED_IP` for correct discovery from phones/simulators
+- Starts Docker Compose with build enabled
+- On macOS, advertises Bonjour from the host using `dns-sd` (more reliable than container-only mDNS on Docker Desktop)
+
+Stop with Ctrl+C.
+
+### Manual Docker Compose run
+
+If you want to run directly:
+
+```bash
+FANCY_FRAME_ADVERTISED_IP=<your-lan-ip> docker compose up --build
+```
+
+### Default test credentials
+
+- API password: `1234` (override with `FANCY_FRAME_API_PASSWORD`)
+- Samba username in stub mode: `photo`
+
+### iOS debug environment (optional)
+
+For deterministic local testing in Xcode debug runs, set app launch environment values:
+
+- `PHOTO_FRAME_STUB_HOST` = host reachable by the app (for example your Mac LAN IP)
+- `PHOTO_FRAME_STUB_COUNT` = number of synthetic frames to show
+- `PHOTO_FRAME_STUB_START_PORT` = first port (default pattern starts at 9000)
+
+This bypasses Bonjour dependency and inserts predictable frame entries in the app list.
 
 ## Build a Preinstalled SD Image (pi-gen, macOS + Docker)
 
@@ -207,6 +258,12 @@ When the frame is connected to Wi-Fi, it also exposes a local management API on 
 | GET / POST | `/api/photos` | Photo count and uploads |
 | GET | `/api/photos/list` | Gallery listing for the iOS app |
 | GET / DELETE | `/api/photos/<filename>` | Thumbnail/full image fetch and deletion |
+| GET | `/api/cover` | Public cover-photo thumbnail/full image |
+| POST | `/api/photos/cover` | Set preferred cover photo |
+| GET / PATCH | `/api/samba` | Read/update Samba guest access settings |
+| POST | `/api/samba/password` | Update Samba password |
+| POST | `/api/auth/token` | Exchange API password for bearer token |
+| POST | `/api/auth/password` | Change API password |
 | POST | `/api/restart` | Reboot the frame |
 
 Use the companion Fancy Frame iPhone app repo to manage settings and photos on the local network.
@@ -231,7 +288,9 @@ fancy-frame/
 │   ├── connect_wifi.sh               # Apply and test Wi-Fi credentials
 │   ├── start-slideshow.sh            # Launch slideshow (called by systemd)
 │   ├── slideshow.py                  # Slideshow engine
-│   └── test_stub.py                  # Local multi-frame simulator for the iOS app
+│   ├── container_api_runner.py       # Container entrypoint that runs real API + mDNS
+│   ├── run_test_stub.sh              # Host launcher for Docker test stub and mDNS
+│   └── update.sh                     # In-place update script for release installs
 ├── portal/
 │   ├── app.py                        # Flask onboarding web app
 │   └── templates/
@@ -381,85 +440,6 @@ systemctl status hostapd
 systemctl status dnsmasq
 ```
 
-## Testing: Fancy Frame Test Stub
-
-For testing the iOS app with multiple simulated frames on your local network, use the **test stub**.
-
-### Quick Start
-
-```bash
-cd /path/to/fancy-frame
-
-# Start 3 test frames (default)
-docker compose up test-frames
-
-# Or specify a different number
-TEST_STUB_FRAMES=5 docker compose up test-frames
-
-# Stop the test frames
-docker compose down
-```
-
-### Usage
-
-The test stub advertises fake Fancy Frame devices on `_fancyframe._tcp.local.` (mDNS/Bonjour) so your iOS app can discover them.
-
-**Requirements:**
-- Docker and Docker Compose installed
-- macOS, Linux, or Windows with a compatible Docker daemon
-- All devices (iPhone + Mac/Linux) on the same local network
-
-**Build and run:**
-
-```bash
-# Build image once (requires a running Docker daemon)
-docker compose build test-frames
-
-# Start with 3 frames
-docker compose up test-frames
-
-# Start with 7 frames in background
-TEST_STUB_FRAMES=7 docker compose up -d test-frames
-docker compose logs -f test-frames
-
-# On macOS Docker Desktop, this can help discovery/reachability from iPhone:
-TEST_STUB_ADVERTISED_IP=<your-mac-lan-ip> TEST_STUB_FRAMES=7 docker compose up -d test-frames
-
-# Stop
-docker compose down
-```
-
-**Each test frame:**
-- Advertises via mDNS with name `Fancy Frame (Test Frame N)`
-- Runs a mock HTTP API on localhost port `9000 + N`
-- Mirrors the current iOS-facing endpoints: `/api/info`, `/api/config`, `/api/photos`, `/api/photos/list`, `/api/photos/<filename>`, and `/api/restart`
-- Supports config updates, in-memory uploads, deletions, and placeholder thumbnail/image responses for gallery testing
-- Stores test changes in memory only; restarting the stub resets the photo set
-
-**Testing scenarios:**
-- 1 frame: test single-device UI and discovery
-- 3–5 frames: test list sorting, reachability toggling, multi-frame navigation
-- 10+ frames: test scrolling and performance with many devices
-
-### Direct Python Usage (Without Docker)
-
-If you don't have Docker, use a small virtual environment for the stub dependencies:
-
-```bash
-python3 -m venv .venv-test-stub
-source .venv-test-stub/bin/activate
-pip install -r requirements-test-stub.txt
-
-# Run with default 3 frames
-python3 scripts/test_stub.py
-
-# Run with custom frame count
-python3 scripts/test_stub.py --frames 7
-
-# Stop with Ctrl+C, then deactivate when done
-deactivate
-```
-
 ### Developer build checks
 
 ```bash
@@ -470,7 +450,7 @@ python3 -m compileall api portal scripts
 # Build the standalone Fancy Frame iPhone app from its companion repo.
 
 # Docker test stub (requires Docker Desktop or another running daemon)
-docker compose build test-frames
+docker compose build
 ```
 
 ## License

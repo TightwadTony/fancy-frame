@@ -45,9 +45,10 @@ fancy-frame/
 │   ├── connect_wifi.sh
 │   ├── start_setup_mode.sh
 │   ├── stop_setup_mode.sh
-│   ├── test_stub.py            # Local fake-frame simulator for iOS testing
+│   ├── container_api_runner.py # Docker test-stub entrypoint (real API runtime)
+│   ├── run_test_stub.sh        # Host launcher for Docker test stub + mDNS helper
 │   └── install_initial_setup.sh  # Full installer (run as root on the Pi)
-├── docker-compose.yml          # Launches the local test stub
+├── docker-compose.yml          # Launches the local Docker test stub
 ├── Dockerfile.test-stub        # Test-stub image
 └── systemd/                    # Systemd service units
     ├── fancy-frame.service             # Slideshow (xinit, always restart)
@@ -167,7 +168,7 @@ hostapd, dnsmasq, all systemd services, Xorg permissions, and boot flags.
 ## Development notes
 
 - **Python** (Pi scripts): standard library + `flask`, `pygame`, `Pillow`.
-  The local test stub additionally uses `zeroconf`.
+  Docker test-stub runtime additionally uses `zeroconf`.
 - **Swift** (iOS): no linter or formatter config checked in; follow standard
   Swift conventions. The app targets **iOS 17+** and uses `@Observable`.
 - **Shell scripts**: `bash`, `set -euo pipefail`, run as root on the Pi.

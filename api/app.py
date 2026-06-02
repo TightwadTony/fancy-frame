@@ -522,6 +522,42 @@ def _fetch_latest_release() -> dict:
     return _extract_release_info(payload)
 
 
+def _is_stub_mode() -> bool:
+    return os.environ.get('FANCY_FRAME_STUB_MODE', '').strip().lower() in ('1', 'true', 'yes', 'on')
+
+
+def _stub_latest_release_info() -> dict:
+    now_iso = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+    return {
+        'tag_name': 'v9.9.9-stub',
+        'name': 'Fancy Frame Stub Release',
+        'api_url': f'https://api.github.com/repos/{GITHUB_REPO}/releases/stub-latest',
+        'published_at': now_iso,
+        'prerelease': False,
+        'draft': False,
+        'assets': [
+            {
+                'name': 'fancy-frame-v9.9.9-stub.tar.gz',
+                'api_url': f'https://api.github.com/repos/{GITHUB_REPO}/releases/assets/stub',
+                'size': 1024,
+            }
+        ],
+    }
+
+
+def _write_stub_update_log(target_version: str) -> None:
+    UPDATE_LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    now_iso = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+    lines = [
+        f"=== {now_iso} starting Fancy Frame stub self-update to {target_version} ===",
+        'Stub mode: skipping release download and systemd-run install unit.',
+        'Stub mode: validating package metadata... OK',
+        'Stub mode: applying update... OK',
+        f"=== {now_iso} finished Fancy Frame stub self-update to {target_version} ===",
+    ]
+    UPDATE_LOG_FILE.write_text('\n'.join(lines) + '\n')
+
+
 def _find_release_archive_asset(release: dict) -> dict | None:
     tag_name = release['tag_name']
     expected_name = f'fancy-frame-{tag_name}.tar.gz'
@@ -825,6 +861,18 @@ def get_update_check():
     """Return GitHub latest release info and whether this frame is behind it."""
     current_version, current_version_source = _get_local_release_version()
 
+    if _is_stub_mode():
+        latest_release = _stub_latest_release_info()
+        return jsonify({
+            'repository': GITHUB_REPO,
+            'current_version': current_version,
+            'current_version_source': current_version_source,
+            'latest_release': latest_release,
+            'comparison': 'update_available',
+            'update_available': True,
+            'checked_at': int(time.time()),
+        })
+
     try:
         latest_release = _fetch_latest_release()
     except RuntimeError as exc:
@@ -852,6 +900,26 @@ def get_update_check():
 def install_latest_update():
     """Download and install the latest released version in a detached updater unit."""
     current_version, current_version_source = _get_local_release_version()
+
+    if _is_stub_mode():
+        latest_release = _stub_latest_release_info()
+        target_version = latest_release['tag_name']
+        try:
+            _write_stub_update_log(target_version)
+        except OSError as exc:
+            logger.exception('Failed to write stub update log')
+            return jsonify({'error': f'Failed to write stub update log: {exc}'}), 500
+
+        _release_update_lock()
+        return jsonify({
+            'status': 'installing',
+            'repository': GITHUB_REPO,
+            'current_version': current_version,
+            'current_version_source': current_version_source,
+            'target_version': target_version,
+            'unit_name': 'fancy-frame-stub-update',
+            'log_path': str(UPDATE_LOG_FILE),
+        }), 202
 
     try:
         latest_release = _fetch_latest_release()
@@ -945,6 +1013,25 @@ def install_latest_update():
 def get_update_status():
     """Return whether a self-update is currently running and where to read logs."""
     current_version, current_version_source = _get_local_release_version()
+
+    if _is_stub_mode():
+        status = {
+            'status': 'idle',
+            'in_progress': False,
+            'active_update': None,
+            'unit_name': None,
+            'log_path': str(UPDATE_LOG_FILE),
+            'log_exists': UPDATE_LOG_FILE.exists(),
+            'log_tail': _read_update_log_tail(),
+            'checked_at': int(time.time()),
+        }
+        status.update({
+            'repository': GITHUB_REPO,
+            'current_version': current_version,
+            'current_version_source': current_version_source,
+        })
+        return jsonify(status)
+
     status = _current_update_status()
     status.update({
         'repository': GITHUB_REPO,
