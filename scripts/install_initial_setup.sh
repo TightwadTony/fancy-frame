@@ -415,6 +415,7 @@ apt install -y \
   x11-xserver-utils \
   python3-pygame \
   python3-pil \
+  python3-opengl \
   imagemagick \
   samba \
   avahi-daemon \

@@ -335,6 +335,36 @@ ssh photo@192.168.4.1
 - Large raw images or excessive metadata will cause slideshow stuttering
 - SMB share writes are fast enough for typical photo uploads via wireless
 
+### GPU transition probe
+
+Fancy Frame automatically uses its GPU renderer when OpenGL acceleration is
+available and falls back to the software renderer if GPU initialization fails.
+Set `FANCY_FRAME_RENDERER=software` to force the legacy renderer or
+`FANCY_FRAME_RENDERER=gpu` to make GPU initialization failures fatal.
+
+To benchmark the frame's actual display stack with two representative photos,
+run this from the local console or stop the slideshow service first so the
+probe can own the display:
+
+```bash
+sudo apt install python3-opengl
+sudo systemctl stop fancy-frame
+xinit /opt/fancy-frame/scripts/gpu_transition_probe.py \
+  /srv/photos/first.jpg /srv/photos/second.jpg -- :0 vt1 -nolisten tcp
+sudo systemctl start fancy-frame
+```
+
+The probe performs ten forward/back 1080p crossfades and reports median, 95th
+percentile, maximum, and late-frame timings. Press Escape to stop it early. A
+healthy 60 fps result should have a p95 close to 16.7 ms and very few frames
+over 25 ms. If 60 fps is not stable, repeat with `--fps 30`; its p95 target is
+about 33.3 ms.
+
+For comparison with the current software renderer, add
+`Environment=FANCY_FRAME_FRAME_TIMING=1` to the slideshow service override.
+Each transition and Ken Burns phase will then emit its p95, maximum, and
+late-frame measurements to the journal.
+
 ## Customization
 
 - **Change AP SSID/password**: Edit `/etc/hostapd/hostapd.conf`
