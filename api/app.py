@@ -73,7 +73,7 @@ VALID_IMAGE_EXTS  = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tif', '
 
 CONFIG_DEFAULTS: dict[str, str] = {
     'frame_name':         'Fancy Frame',
-    'slide_seconds':      '25',
+    'slide_seconds':      '15',
     'fade_seconds':       '1.5',
     'transitions':        ', '.join(DEFAULT_TRANSITION_NAMES),
     'ken_burns':          'yes',

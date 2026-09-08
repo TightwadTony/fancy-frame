@@ -65,3 +65,6 @@ test_output/
 
 # pi-gen build working directory (can be gigabytes)
 pi-gen/.build/
+
+# Generated artifacts
+/.artifacts/

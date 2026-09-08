@@ -709,7 +709,7 @@ def _build_default_config(default_transition_value: str) -> str:
 frame_name = Fancy Frame
 
 # Seconds each photo is displayed (including the transition)
-slide_seconds = 25
+slide_seconds = 15
 
 # Transition duration in seconds
 fade_seconds = 1.5
@@ -729,7 +729,7 @@ ken_burns_zoom_max = 1.20
 
 _CONFIG_DEFAULTS = {
     'frame_name':         'Fancy Frame',
-    'slide_seconds':      '25',
+    'slide_seconds':      '15',
     'fade_seconds':       '1.5',
     'transitions':        ', '.join(DEFAULT_TRANSITION_NAMES),
     'ken_burns':          'yes',

@@ -368,7 +368,7 @@ late-frame measurements to the journal.
 ## Customization
 
 - **Change AP SSID/password**: Edit `/etc/hostapd/hostapd.conf`
-- **Adjust slideshow delay**: Set `FANCY_FRAME_SLIDE_SECONDS` (default 25)
+- **Adjust slideshow delay**: Set `FANCY_FRAME_SLIDE_SECONDS` (default 15)
 - **Adjust refresh interval for newly added photos**: Set `FANCY_FRAME_REFRESH_SECONDS` (default 300)
 - **Set frame display name at install time**: Set `FANCY_FRAME_NAME` before running installer (or enter it when prompted)
 - **Change share path**: Update `/srv/photos` references in `scripts/install_initial_setup.sh` (Samba section), then reinstall or reapply the Samba config block

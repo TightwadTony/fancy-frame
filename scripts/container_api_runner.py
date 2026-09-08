@@ -41,7 +41,7 @@ def _ensure_runtime_files() -> None:
             "\n".join(
                 [
                     "frame_name = Fancy Frame",
-                    "slide_seconds = 25",
+                    "slide_seconds = 15",
                     "fade_seconds = 1.5",
                     "transitions = crossfade, fade_to_black, wipe",
                     "ken_burns = yes",
