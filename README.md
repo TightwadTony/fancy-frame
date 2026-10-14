@@ -1,473 +1,259 @@
 # Fancy Frame
 
-A self-contained digital photo frame system for Raspberry Pi Zero with a full-screen slideshow, automatic Wi-Fi onboarding, a local REST management API, and a native iPhone remote app.
+Fancy Frame turns a Raspberry Pi and attached display into a self-contained
+digital photo frame. It provides a full-screen slideshow, guided Wi-Fi setup,
+an SMB photo share, a local management API, and a companion iPhone app.
 
 ## Features
 
-- **Full-screen slideshow** on the connected LCD panel with crossfade, fade-to-black, wipe, and Ken Burns effects
-- **REST management API** on Wi-Fi for frame info, slideshow settings, photo listing, uploads, deletions, and restart
-- **Release update check endpoint** to compare the installed version with the latest GitHub release
-- **Native iOS 17+ app** with Bonjour discovery for settings and photo management
-- **SMB network share** for adding/removing photos from phones, laptops, or other devices on the same local network
-- **Automatic Wi-Fi onboarding portal** when the device cannot connect to a known network
-- **Automatic reconnection** with saved Wi-Fi credentials
-- **Immediate first-boot onboarding** when no Wi-Fi credentials are provisioned; configured frames retain the 60-second boot-time AP fallback
-- **Local test stub** via Docker for iOS QA and discovery testing
-- **Systemd services** for reliable boot and auto-restart
+- Full-screen slideshow with crossfade, fade-to-black, wipe, slide, cover, and
+  Ken Burns effects
+- On-screen first-boot instructions with the setup Wi-Fi name, password, and a
+  QR code for the onboarding portal
+- Native iOS 17+ app discovery and management over the local network
+- SMB photo share for phones and computers
+- Authenticated REST API for photos, settings, updates, and restart
+- Automatic reconnect to saved Wi-Fi networks and boot-time AP fallback
 
-## Hardware Requirements
+## Requirements
 
-- Raspberry Pi Zero (or Zero W/WH)
-- 16x9 LCD panel with working panel controller (pre-verified)
-- microSD card (4GB minimum, 8GB+ recommended)
-- USB power adapter
-- Wireless network or personal hotspot (for initial setup and photo uploads)
+- Raspberry Pi Zero 2 W
+- Working display and controller
+- microSD card, 4 GB minimum
+- USB power supply
+- Wi-Fi network or personal hotspot
 
-## Quick Start
+## Getting started
 
-### 1. Build or download a Fancy Frame image
+### 1. Flash the image
 
-Use one of these methods:
+Download a `fancy-frame-*.img.xz` release or [build an image](#building-an-image).
+In Raspberry Pi Imager, choose **Use custom**, select the image, and write it to
+the microSD card.
 
-- Build your own image with the included pi-gen tooling (see [Build a Preinstalled SD Image](#build-a-preinstalled-sd-image-pi-gen-macos--docker)).
-- Download a prebuilt `fancy-frame-*.img.xz` release artifact.
+Raspberry Pi Imager can optionally preconfigure the hostname, SSH, locale,
+timezone, Wi-Fi country, and home Wi-Fi credentials.
 
-### 2. Flash the image to microSD with Raspberry Pi Imager
+### 2. Connect the frame to Wi-Fi
 
-- Open Raspberry Pi Imager.
-- Choose **Use custom** and select the Fancy Frame `.img.xz` file.
-- Select your microSD card and write.
+Insert the card and power on the frame. Its startup behavior depends on the
+image state:
 
-Optional advanced settings in Imager (recommended):
+| State | Behavior |
+| --- | --- |
+| Fresh image without Wi-Fi credentials | Setup instructions appear immediately and the onboarding access point starts without waiting. |
+| Wi-Fi provisioned by Raspberry Pi Imager | The frame tries that network for up to 60 seconds before starting onboarding. |
+| Previously configured frame | The frame reconnects normally, with onboarding as a 60-second boot-time fallback. |
 
-- Set hostname (for example `fancy-frame`)
-- Enable SSH
-- Set locale/timezone and Wi-Fi country
-- Optionally preconfigure Wi-Fi
+During onboarding, the display shows the active access point credentials and a
+QR code. With the defaults:
 
-### 3. Boot the frame
+1. Join `FancyFrame-Setup` using password `FancyFrame123`.
+2. Stay connected if the phone reports that the network has no Internet.
+3. Scan the QR code on the frame, or open `http://192.168.4.1/`.
+4. Choose the home Wi-Fi network and enter its password.
 
-Insert the flashed SD card and power on the Raspberry Pi.
+After a successful connection, the frame saves its configured state, stops the
+access point, and reboots onto the home network. Customized access point values
+from `/etc/hostapd/hostapd.conf` are reflected on the setup screen.
 
-After boot:
+### 3. Add photos
 
-- If Wi-Fi is configured and reachable: slideshow starts
-- On a fresh image without Wi-Fi credentials: setup instructions appear as soon as the display starts, and onboarding AP activates without the 60-second wait
-- If Wi-Fi is not connected within ~60 seconds after boot: onboarding AP activates and the frame displays Wi-Fi setup instructions, the AP name/password, and a QR code linking to the setup portal
+Connect to the SMB share and copy photos into it:
 
-No manual file copy or on-device installer execution is required with the image-based workflow.
+- Windows: `\\fancy-frame\photos`
+- macOS/Linux: `smb://fancy-frame/photos`
 
-## Local Test Stub (iOS QA)
+Replace `fancy-frame` with the configured hostname or IP address when needed.
+Prebuilt images allow guest access. An existing-system installation uses the
+access mode selected by its installer and may require the Pi username and a
+Samba password. The share accepts JPEG, PNG, GIF, BMP, WebP, and TIFF files.
+Photos can also be uploaded through the iPhone app or REST API.
 
-Use the test stub to run the Fancy Frame API locally without Raspberry Pi hardware.
+The slideshow scans `/srv/photos`, randomizes its order, and checks for new
+files every five minutes. Its settings live in
+`/srv/photos/fancy-frame.conf`, which is also available through the share.
 
-### What it provides
+### 4. Connect the iPhone app
 
-- Real Flask API runtime in a container on port 8080
-- mDNS advertisement for iOS discovery (container advertises `_fancyframe._tcp`; on macOS, `run_test_stub.sh` also advertises `_photoframe._tcp` from the host)
-- Test-mode defaults for Samba and API auth behavior
-- Fast local loop for iOS UI and API validation
+The frame advertises `_fancyframe._tcp.local.` on port 8080, allowing the
+companion app to discover it automatically. The default frame API PIN is
+`12345678`; change it from the app after connecting.
 
-### Docker test stub (recommended)
+## Common operations
 
-From `fancy-frame/`:
+### Force Wi-Fi onboarding
 
-```bash
-./scripts/run_test_stub.sh
-```
-
-What this helper does:
-
-- Detects your host LAN IPv4 address automatically
-- Exports `FANCY_FRAME_ADVERTISED_IP` for correct discovery from phones/simulators
-- Starts Docker Compose with build enabled
-- On macOS, advertises Bonjour from the host using `dns-sd` (more reliable than container-only mDNS on Docker Desktop)
-
-Stop with Ctrl+C.
-
-### Manual Docker Compose run
-
-If you want to run directly:
+To reconfigure Wi-Fi on the next boot:
 
 ```bash
-FANCY_FRAME_ADVERTISED_IP=<your-lan-ip> docker compose up --build
+ssh photo@fancy-frame
+sudo touch /boot/firmware/force-onboarding
+sudo reboot
 ```
 
-### Default test credentials
+Older Raspberry Pi OS images also accept `/boot/force-onboarding`. Forced
+onboarding displays the setup screen even when the frame already has photos.
 
-- API password: `1234` (override with `FANCY_FRAME_API_PASSWORD`)
-- Samba username in stub mode: `photo`
+### Check services and logs
 
-### iOS debug environment (optional)
+```bash
+systemctl status fancy-frame.service
+systemctl status fancy-frame-wifi-bootstrap.service
+systemctl status fancy-frame-setup-portal.service
+journalctl -u fancy-frame.service -f
+```
 
-For deterministic local testing in Xcode debug runs, set app launch environment values:
+While setup mode is active, the frame is reachable at `192.168.4.1`:
 
-- `PHOTO_FRAME_STUB_HOST` = host reachable by the app (for example your Mac LAN IP)
-- `PHOTO_FRAME_STUB_COUNT` = number of synthetic frames to show
-- `PHOTO_FRAME_STUB_START_PORT` = first port (default pattern starts at 9000)
+```bash
+ssh photo@192.168.4.1
+```
 
-This bypasses Bonjour dependency and inserts predictable frame entries in the app list.
+### Customize the frame
 
-## Build a Preinstalled SD Image (pi-gen, macOS + Docker)
+| Setting | Location |
+| --- | --- |
+| Frame name and slideshow behavior | `/srv/photos/fancy-frame.conf` (`slide_seconds` defaults to 15) |
+| Setup access point SSID/password | `/etc/hostapd/hostapd.conf` |
+| Photo rescan interval | `FANCY_FRAME_REFRESH_SECONDS` (300 seconds) |
+| Photo directory | `FANCY_FRAME_PHOTO_DIR` (`/srv/photos`) |
+| Renderer selection | `FANCY_FRAME_RENDERER` (`auto`, `software`, or `gpu`) |
 
-If you want a flashable image that already includes Fancy Frame, use the included `pi-gen/` tooling.
+## Building an image
 
-### What this build does
+The `pi-gen` wrapper builds a 64-bit Raspberry Pi OS image for the Pi Zero 2 W
+with Fancy Frame preinstalled. Docker is required on the build machine.
 
-- Builds **64-bit Raspberry Pi OS** using pi-gen's `arm64` branch
-- Includes Fancy Frame files and runs `scripts/install_initial_setup.sh` during image creation
-- Supports model selection in config: `zero2w`, `pi4`, or `pi5`
-- Applies two hardware profiles:
-  - `zero2w` profile: strict service pruning + 1080p cap
-  - `pi45` profile (used for `pi4` and `pi5`): balanced defaults + 1080p cap
-
-### 1. Configure build options
-
-Edit `pi-gen/config` and set at least:
+Configure the image in `pi-gen/config`:
 
 ```bash
 PI_GEN_BRANCH=arm64
-export FANCY_FRAME_TARGET_MODEL=pi5   # zero2w | pi4 | pi5
+export FANCY_FRAME_TARGET_MODEL=zero2w
 TIMEZONE_DEFAULT=America/Regina
 WPA_COUNTRY=CA
-TARGET_HOSTNAME=photo-frame
+TARGET_HOSTNAME=fancy-frame
 FIRST_USER_NAME=photo
 FIRST_USER_PASS=photo
 ```
 
-Notes:
-- `FANCY_FRAME_TARGET_MODEL=zero2w` selects the stricter low-resource profile.
-- `FANCY_FRAME_TARGET_MODEL=pi4` and `pi5` both map to the shared `pi45` profile.
-
-### 2. Build the image
-
-From the repo root:
+Then run:
 
 ```bash
 bash pi-gen/build-image.sh
 ```
 
-Optional:
+Use `bash pi-gen/build-image.sh --no-update` to reuse the existing pi-gen
+checkout. Finished `.img.xz` files are written below
+`pi-gen/.build/pi-gen/deploy/` and can be passed directly to Raspberry Pi
+Imager.
+
+For installation onto an existing Raspberry Pi OS system, see [SETUP.md](SETUP.md).
+
+## Local development
+
+### API test stub
+
+The Docker test stub runs the real Flask API on port 8080 and advertises it for
+iOS discovery:
 
 ```bash
-bash pi-gen/build-image.sh --no-update
+./scripts/run_test_stub.sh
 ```
 
-This wrapper script:
-- Clones/updates pi-gen under `pi-gen/.build/pi-gen`
-- Copies your local `stage-fancy-frame` and `pi-gen/config`
-- Syncs this repository into the stage payload
-- Launches pi-gen via Docker
-
-### 3. Find the output image
-
-Build artifacts are placed in:
+The helper detects the Mac's LAN address and publishes both current and legacy
+Bonjour service types. To run Docker Compose directly:
 
 ```bash
-pi-gen/.build/pi-gen/deploy/
+FANCY_FRAME_ADVERTISED_IP=<your-lan-ip> docker compose up --build
 ```
 
-Image names include the selected model, for example:
+The test stub uses API password `1234` and Samba username `photo`. Override the
+password with `FANCY_FRAME_API_PASSWORD`.
+
+For deterministic iOS debug runs, these Xcode launch environment values bypass
+Bonjour discovery:
+
+- `PHOTO_FRAME_STUB_HOST`: host reachable from the phone or simulator
+- `PHOTO_FRAME_STUB_COUNT`: number of synthetic frames
+- `PHOTO_FRAME_STUB_START_PORT`: first port in the generated range
+
+### Validation
 
 ```bash
-2026-04-23-fancy-frame-pi5-arm64.img.xz
+python3 -m compileall api portal scripts
+python3 -m unittest discover -s tests -v
+docker compose build
 ```
 
-### 4. Flash to SD card
+## REST API
 
-- Raspberry Pi Imager: select the `.img.xz` file directly
-- Or command line:
-
-```bash
-xz -d <image.img.xz>
-sudo dd if=<image.img> of=/dev/diskN bs=4m status=progress
-```
-
-### Troubleshooting pi-gen builds
-
-- If Docker says a build container is already running, stop it:
-
-```bash
-docker stop pigen_work_<model>
-```
-
-- If a previous build was interrupted, re-run `bash pi-gen/build-image.sh`; stale stopped containers are cleaned automatically.
-- Build workspace cache lives in `pi-gen/.build/` and can be removed to force a clean rebuild.
-
-## Connecting to the Photo Share
-
-### Success: Wi-Fi connected
-
-- **Windows**: `\\fancy-frame\photos`
-- **macOS/Linux**: `smb://fancy-frame/photos`
-- **Username**: (your Pi username, e.g., `photo` or `pi`)
-- **Password**: (the SMB password you set)
-
-### Setup mode: Access the onboarding portal
-
-If the device enters setup mode (onboarding AP):
-
-1. Find the AP with SSID `FancyFrame-Setup` (default password: `FancyFrame123`)
-2. After joining the AP, scan the QR code on the frame or open a browser to `http://192.168.4.1/`. Stay connected if your phone warns that this network has no Internet.
-3. Select your home Wi-Fi network and password
-4. AP disconnects while credentials are applied
-5. On success, device reboots and reconnects as a Wi-Fi client
-
-The setup screen reads credentials from `/etc/hostapd/hostapd.conf`, so customized
-AP names and passwords appear on the display too. It also appears during forced
-onboarding, even when photos already exist, and disappears when the AP stops.
-The bundled `scripts/setup-portal-qr.png` encodes `http://192.168.4.1/` with a
-four-module quiet zone; no QR library or Internet access is needed on the frame.
-Successful Wi-Fi setup or a normal boot-time connection persists
-`/var/lib/fancy-frame/wifi-configured`. Until then, a frame without saved Wi-Fi
-credentials shows setup instructions immediately, including after a power cycle.
-Credentials provisioned through Raspberry Pi Imager retain the normal connection
-window before AP fallback.
-
-## Remote management
-
-When the frame is connected to Wi-Fi, it also exposes a local management API on port 8080 and advertises itself via `_fancyframe._tcp.local.` for iPhone discovery.
+The authenticated management API listens on port 8080.
 
 | Method | Path | Purpose |
-|--------|------|---------|
-| GET | `/api/info` | Hostname, IP address, uptime |
-| GET | `/api/config` | Current slideshow configuration |
-| GET | `/api/update-check` | Latest GitHub release info and whether an update is available |
-| GET | `/api/update/status` | Whether a self-update is running and where its logs are |
-| POST | `/api/update` | Download and install the latest released version |
-| PATCH | `/api/config` | Update frame name and slideshow settings |
-| GET / POST | `/api/photos` | Photo count and uploads |
-| GET | `/api/photos/list` | Gallery listing for the iOS app |
-| GET / DELETE | `/api/photos/<filename>` | Thumbnail/full image fetch and deletion |
-| GET | `/api/cover` | Public cover-photo thumbnail/full image |
-| POST | `/api/photos/cover` | Set preferred cover photo |
-| GET / PATCH | `/api/samba` | Read/update Samba guest access settings |
-| POST | `/api/samba/password` | Update Samba password |
-| POST | `/api/auth/token` | Exchange API password for bearer token |
-| POST | `/api/auth/password` | Change API password |
-| POST | `/api/restart` | Reboot the frame |
+| --- | --- | --- |
+| `GET` | `/api/info` | Hostname, address, and uptime |
+| `GET`, `PATCH` | `/api/config` | Read or update frame and slideshow settings |
+| `GET`, `POST` | `/api/photos` | Count or upload photos |
+| `GET` | `/api/photos/list` | List the photo gallery |
+| `GET`, `DELETE` | `/api/photos/<filename>` | Fetch or delete a photo |
+| `GET` | `/api/cover` | Fetch the cover photo |
+| `POST` | `/api/photos/cover` | Select the cover photo |
+| `GET`, `PATCH` | `/api/samba` | Read or update share settings |
+| `POST` | `/api/samba/password` | Change the Samba password |
+| `POST` | `/api/auth/token` | Exchange the API PIN for a bearer token |
+| `POST` | `/api/auth/password` | Change the API PIN |
+| `GET` | `/api/update-check` | Check the latest GitHub release |
+| `POST` | `/api/update` | Install the latest release |
+| `GET` | `/api/update/status` | Read updater state and recent logs |
+| `POST` | `/api/restart` | Reboot the frame |
 
-Use the companion Fancy Frame iPhone app repo to manage settings and photos on the local network.
-
-For authenticated release checks, set `RELEASESPAT` on the Pi in `/etc/fancy-frame-api.env` and restart `fancy-frame-api.service`. The API service loads that file automatically.
-For private repositories, `/api/update-check` returns GitHub API URLs in `latest_release.api_url` and `latest_release.assets[].api_url` instead of public `github.com` release links.
-
-`POST /api/update` runs the updater in a detached transient systemd unit and writes progress to `/var/log/fancy-frame-update.log`.
-`GET /api/update/status` reports whether that updater is still running and returns the current log path plus recent log lines.
-
-## Directory Structure
-
-```
-fancy-frame/
-├── api/
-│   └── app.py                        # Flask management API (port 8080)
-├── scripts/
-│   ├── install_initial_setup.sh      # Main installer (run once as root)
-│   ├── wifi_bootstrap.sh             # Decides normal vs setup mode
-│   ├── start_setup_mode.sh           # Enable AP + DHCP
-│   ├── stop_setup_mode.sh            # Disable AP, restore client mode
-│   ├── connect_wifi.sh               # Apply and test Wi-Fi credentials
-│   ├── start-slideshow.sh            # Launch slideshow (called by systemd)
-│   ├── slideshow.py                  # Slideshow engine
-│   ├── container_api_runner.py       # Container entrypoint that runs real API + mDNS
-│   ├── run_test_stub.sh              # Host launcher for Docker test stub and mDNS
-│   └── update.sh                     # In-place update script for release installs
-├── portal/
-│   ├── app.py                        # Flask onboarding web app
-│   └── templates/
-│       ├── index.html                # Wi-Fi/SSID selection page
-│       └── result.html               # Success/failure feedback
-├── systemd/
-│   ├── fancy-frame.service           # Main slideshow service
-│   ├── fancy-frame-wifi-bootstrap.service  # Bootstrap decision logic
-│   ├── fancy-frame-setup-mode.service      # AP/DHCP service
-│   ├── fancy-frame-setup-portal.service    # Web portal service
-│   └── fancy-frame-api.service            # Management API service
-├── config/
-│   ├── hostapd.conf                  # Access point config
-│   ├── dnsmasq-fancy-frame.conf      # DHCP/DNS for AP mode
-│   └── avahi-fancy-frame.service     # mDNS advertisement for the API
-├── docker-compose.yml                # Test-stub launch config
-├── Dockerfile.test-stub              # Test-stub container image
-├── requirements-test-stub.txt        # Test-stub Python dependency list
-├── SETUP.md                          # Detailed setup instructions
-└── README.md                         # This file
-```
-
-## Usage
-
-### Add/remove photos
-
-Connect to the photo share and drag files in or out:
-
-```bash
-# Example: macOS
-open smb://fancy-frame/photos
-```
-
-Supported formats: JPEG, PNG, GIF, BMP, WebP, TIFF.
-
-Slideshow behaviour:
-- Randomised order, reshuffled when the list is exhausted
-- Scans all files directly under `/srv/photos` (symlinks resolved by the installer)
-- New photos are picked up by periodic rescan (default 300 seconds)
-- Settings (slide duration, transitions, Ken Burns zoom range, etc.) are read from `/srv/photos/fancy-frame.conf`, which is accessible via the same Samba share — edit it from any device on the network and changes take effect within 5 minutes
-- Set `frame_name` in `/srv/photos/fancy-frame.conf` to control the name shown in the iPhone app device list/detail views
-
-### Force onboarding mode (manual reconfiguration)
-
-```bash
-ssh photo@fancy-frame
-# On Bookworm, boot partition is at /boot/firmware/
-sudo touch /boot/firmware/force-onboarding
-sudo reboot
-```
-
-At next boot, setup mode activates and you can enter new Wi-Fi credentials.
-
-### Check service status
-
-```bash
-ssh photo@fancy-frame
-systemctl status fancy-frame
-journalctl -u fancy-frame -f
-```
-
-### SSH shortcuts while in setup mode
-
-If device is in setup AP mode and you need shell access:
-
-```bash
-ssh photo@192.168.4.1
-```
-
-## Performance Notes
-
-- Pi Zero is CPU-limited; use JPEG files resized near your panel resolution (1280x720 or similar)
-- Large raw images or excessive metadata will cause slideshow stuttering
-- SMB share writes are fast enough for typical photo uploads via wireless
-
-### GPU transition probe
-
-Fancy Frame automatically uses its GPU renderer when OpenGL acceleration is
-available and falls back to the software renderer if GPU initialization fails.
-Set `FANCY_FRAME_RENDERER=software` to force the legacy renderer or
-`FANCY_FRAME_RENDERER=gpu` to make GPU initialization failures fatal.
-
-To benchmark the frame's actual display stack with two representative photos,
-run this from the local console or stop the slideshow service first so the
-probe can own the display:
-
-```bash
-sudo apt install python3-opengl
-sudo systemctl stop fancy-frame
-xinit /opt/fancy-frame/scripts/gpu_transition_probe.py \
-  /srv/photos/first.jpg /srv/photos/second.jpg -- :0 vt1 -nolisten tcp
-sudo systemctl start fancy-frame
-```
-
-The probe performs ten forward/back 1080p crossfades and reports median, 95th
-percentile, maximum, and late-frame timings. Press Escape to stop it early. A
-healthy 60 fps result should have a p95 close to 16.7 ms and very few frames
-over 25 ms. If 60 fps is not stable, repeat with `--fps 30`; its p95 target is
-about 33.3 ms.
-
-For comparison with the current software renderer, add
-`Environment=FANCY_FRAME_FRAME_TIMING=1` to the slideshow service override.
-Each transition and Ken Burns phase will then emit its p95, maximum, and
-late-frame measurements to the journal.
-
-## Customization
-
-- **Change AP SSID/password**: Edit `/etc/hostapd/hostapd.conf`
-- **Adjust slideshow delay**: Set `FANCY_FRAME_SLIDE_SECONDS` (default 15)
-- **Adjust refresh interval for newly added photos**: Set `FANCY_FRAME_REFRESH_SECONDS` (default 300)
-- **Set frame display name at install time**: Set `FANCY_FRAME_NAME` before running installer (or enter it when prompted)
-- **Change share path**: Update `/srv/photos` references in `scripts/install_initial_setup.sh` (Samba section), then reinstall or reapply the Samba config block
-- **Add multiple Wi-Fi networks**: Manually edit `/etc/wpa_supplicant/wpa_supplicant.conf` with multiple network blocks
+For authenticated or private GitHub release access, set `RELEASESPAT` in
+`/etc/fancy-frame-api.env` and restart `fancy-frame-api.service`. Updater logs
+are written to `/var/log/fancy-frame-update.log`.
 
 ## Troubleshooting
 
-### Slideshow never starts
+### The onboarding portal does not open
+
+Confirm that the phone remains connected to `FancyFrame-Setup`, then open
+`http://192.168.4.1/` directly. On the frame, check:
 
 ```bash
-journalctl -u fancy-frame -n 50
-journalctl -u fancy-frame-wifi-bootstrap -n 50
+systemctl status fancy-frame-setup-mode.service
+systemctl status fancy-frame-setup-portal.service
+systemctl status hostapd.service dnsmasq.service
 ```
 
-Common causes:
-- No photos in `/srv/photos` (add at least one JPEG/PNG)
-- Display not detected (verify with `cat /var/log/Xorg.0.log`)
-- Permission issue on photo directory (verify: `ls -ld /srv/photos`)
-
-### Can't connect to SMB share
-
-- Verify device is on network: `ping fancy-frame.local`
-- Verify SMB password was set: `sudo smbpasswd -l` (check your username in output)
-- Check share exists: `smbclient -L fancy-frame -U photo` (replace `photo` with your username)
-
-### Stuck in setup mode after valid entry
-
-This usually indicates Wi-Fi association succeeds but DHCP does not assign an IP. Try:
+### Wi-Fi setup succeeds but the frame does not reconnect
 
 ```bash
-ssh photo@192.168.4.1
 wpa_cli -i wlan0 status
 ip -4 addr show wlan0
-```
-
-If `wlan0` has no IPv4 address, check DHCP client status:
-
-```bash
 systemctl status dhcpcd.service
 journalctl -u dhcpcd.service -b --no-pager | tail -n 120
 ```
 
-If you need onboarding AP immediately regardless of current Wi-Fi state:
+### The slideshow does not start
 
 ```bash
-sudo touch /boot/firmware/force-onboarding
-sudo reboot
+journalctl -u fancy-frame.service -n 50
+cat /var/log/Xorg.0.log
+ls -ld /srv/photos
 ```
 
-### Connected to Wi-Fi but not reachable by SSH
+## Project layout
 
-If your router shows the Pi connected but you cannot ping/SSH it, check `wlan0` and SSH on local console:
-
-```bash
-ip -4 addr show wlan0
-ip route
-systemctl status ssh --no-pager -l
-ss -lntp | grep :22
-```
-
-### Portal page unreachable
-
-Verify hostapd and dnsmasq are running:
-
-```bash
-ssh photo@192.168.4.1
-systemctl status hostapd
-systemctl status dnsmasq
-```
-
-### Developer build checks
-
-```bash
-# Python sources
-python3 -m compileall api portal scripts
-
-# iPhone app
-# Build the standalone Fancy Frame iPhone app from its companion repo.
-
-# Docker test stub (requires Docker Desktop or another running daemon)
-docker compose build
+```text
+api/        Flask management API
+config/     hostapd, dnsmasq, and Avahi configuration
+pi-gen/     flashable-image build wrapper and stage
+portal/     Wi-Fi onboarding web application
+scripts/    slideshow, networking, install, update, and test helpers
+systemd/    service definitions installed on the frame
+tests/      setup-screen and Wi-Fi bootstrap tests
 ```
 
 ## License
 
 MIT
-
-## Contributing
-
-Issues and pull requests welcome.
