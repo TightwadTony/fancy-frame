@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+rm -f /run/fancy-frame-setup-active
+
 rfkill unblock wifi || true
 
 # Prevent client-mode daemons from reclaiming wlan0 while AP mode is active.
@@ -29,3 +31,6 @@ ip addr add 192.168.4.1/24 dev wlan0
 
 systemctl restart dnsmasq
 systemctl restart hostapd
+
+# Volatile state shared with the display; publish only after the AP is ready.
+touch /run/fancy-frame-setup-active

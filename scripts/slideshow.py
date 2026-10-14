@@ -26,6 +26,7 @@ from pathlib import Path
 
 import pygame
 from PIL import Image, ImageOps
+from setup_screen import should_show_setup, render_setup_screen
 
 try:
     from OpenGL.GL import (
@@ -926,6 +927,9 @@ class SoftwareRenderer:
     def make_placeholder_frame(self) -> SoftwareFrame:
         return SoftwareFrame(_render_placeholder(self.size))
 
+    def make_setup_frame(self) -> SoftwareFrame:
+        return SoftwareFrame(render_setup_screen(self.size))
+
     def present(self, frame: SoftwareFrame) -> None:
         self.screen.blit(frame.surface, (0, 0))
         _present()
@@ -1200,6 +1204,10 @@ class GPURenderer:
         pixels = pygame.image.tostring(surface, 'RGB')
         return GPUFrame(self._upload_texture(pixels), GPUKenBurns(1.0, 1.0, False))
 
+    def make_setup_frame(self) -> GPUFrame:
+        pixels = pygame.image.tostring(render_setup_screen(self.size), 'RGB')
+        return GPUFrame(self._upload_texture(pixels), GPUKenBurns(1.0, 1.0, False))
+
     def present(self, frame: GPUFrame) -> None:
         glClear(GL_COLOR_BUFFER_BIT)
         self._draw(frame, 1.0)
@@ -1373,9 +1381,24 @@ def main() -> None:
     last_refresh:        float                = 0.0
     preloaded_path:      str | None           = None
     placeholder_frame = None
+    setup_frame = None
 
     while True:
         now = time.monotonic()
+
+        # Setup takes priority even if photos already exist (forced onboarding).
+        # Keep it static and poll independently of the photo refresh interval.
+        if should_show_setup():
+            if setup_frame is None:
+                setup_frame = renderer.make_setup_frame()
+            renderer.present(setup_frame)
+            if not renderer.wait(1):
+                break
+            continue
+        if setup_frame is not None:
+            renderer.release_frame(setup_frame)
+            setup_frame = None
+            renderer.present(current)
 
         # Check for config file changes every CONFIG_CHECK_SECS seconds.
         if now - last_config_check >= CONFIG_CHECK_SECS:

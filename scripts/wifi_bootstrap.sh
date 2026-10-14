@@ -2,6 +2,18 @@
 set -euo pipefail
 
 WAIT_SECONDS=60
+CONFIGURED_FLAG="/var/lib/fancy-frame/wifi-configured"
+
+mark_wifi_configured() {
+  mkdir -p "$(dirname "${CONFIGURED_FLAG}")"
+  touch "${CONFIGURED_FLAG}"
+}
+
+has_saved_wifi() {
+  grep -Eq '^[[:space:]]*network[[:space:]]*=' \
+    /etc/wpa_supplicant/wpa_supplicant.conf \
+    /etc/wpa_supplicant/wpa_supplicant-wlan0.conf 2>/dev/null
+}
 
 # Bookworm moved boot to /boot/firmware/; check both for compatibility
 FORCE_FLAG="/boot/firmware/force-onboarding"
@@ -30,10 +42,24 @@ if [[ -f "${FORCE_FLAG}" ]]; then
   exit 0
 fi
 
+# A fresh image without provisioned credentials has nothing to connect to.
+# Start onboarding immediately; keep doing so until setup succeeds.
+# Preserve the normal connection window for Raspberry Pi Imager credentials.
+if [[ ! -f "${CONFIGURED_FLAG}" ]] && ! has_saved_wifi; then
+  if is_wifi_connected; then
+    mark_wifi_configured
+  else
+    systemctl start fancy-frame-setup-mode.service
+    systemctl start fancy-frame-setup-portal.service
+  fi
+  exit 0
+fi
+
 # Only fall back to AP mode if WiFi is not connected within 60 seconds of boot.
 # Never enter AP mode after that — a temporary outage should not trigger onboarding.
 for _ in $(seq 1 "${WAIT_SECONDS}"); do
   if is_wifi_connected; then
+    mark_wifi_configured
     exit 0
   fi
   sleep 1

@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+rm -f /run/fancy-frame-setup-active
+
 systemctl stop hostapd >/dev/null 2>&1 || true
 systemctl stop dnsmasq >/dev/null 2>&1 || true
 
