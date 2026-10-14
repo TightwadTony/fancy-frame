@@ -11,7 +11,7 @@ A self-contained digital photo frame system for Raspberry Pi Zero with a full-sc
 - **SMB network share** for adding/removing photos from phones, laptops, or other devices on the same local network
 - **Automatic Wi-Fi onboarding portal** when the device cannot connect to a known network
 - **Automatic reconnection** with saved Wi-Fi credentials
-- **Boot-time AP fallback only** (onboarding AP starts only if Wi-Fi is not connected within 60 seconds after boot)
+- **Immediate first-boot onboarding** when no Wi-Fi credentials are provisioned; configured frames retain the 60-second boot-time AP fallback
 - **Local test stub** via Docker for iOS QA and discovery testing
 - **Systemd services** for reliable boot and auto-restart
 
@@ -52,7 +52,8 @@ Insert the flashed SD card and power on the Raspberry Pi.
 After boot:
 
 - If Wi-Fi is configured and reachable: slideshow starts
-- If Wi-Fi is not connected within ~60 seconds after boot: onboarding AP activates
+- On a fresh image without Wi-Fi credentials: setup instructions appear as soon as the display starts, and onboarding AP activates without the 60-second wait
+- If Wi-Fi is not connected within ~60 seconds after boot: onboarding AP activates and the frame displays Wi-Fi setup instructions, the AP name/password, and a QR code linking to the setup portal
 
 No manual file copy or on-device installer execution is required with the image-based workflow.
 
@@ -207,10 +208,21 @@ docker stop pigen_work_<model>
 If the device enters setup mode (onboarding AP):
 
 1. Find the AP with SSID `FancyFrame-Setup` (default password: `FancyFrame123`)
-2. Open browser to `http://192.168.4.1/`
+2. After joining the AP, scan the QR code on the frame or open a browser to `http://192.168.4.1/`. Stay connected if your phone warns that this network has no Internet.
 3. Select your home Wi-Fi network and password
 4. AP disconnects while credentials are applied
 5. On success, device reboots and reconnects as a Wi-Fi client
+
+The setup screen reads credentials from `/etc/hostapd/hostapd.conf`, so customized
+AP names and passwords appear on the display too. It also appears during forced
+onboarding, even when photos already exist, and disappears when the AP stops.
+The bundled `scripts/setup-portal-qr.png` encodes `http://192.168.4.1/` with a
+four-module quiet zone; no QR library or Internet access is needed on the frame.
+Successful Wi-Fi setup or a normal boot-time connection persists
+`/var/lib/fancy-frame/wifi-configured`. Until then, a frame without saved Wi-Fi
+credentials shows setup instructions immediately, including after a power cycle.
+Credentials provisioned through Raspberry Pi Imager retain the normal connection
+window before AP fallback.
 
 ## Remote management
 
